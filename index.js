@@ -8,7 +8,7 @@ const port = process.env.PORT || 5000;
 app.use(express.json());
 app.use(cors());
 
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.5e8b5ac.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
@@ -26,6 +26,10 @@ async function run() {
     await client.connect();
 
     const userCollections = client.db("MedDiagnostic").collection("users");
+    const allTestCollections = client.db("MedDiagnostic").collection("allTest");
+    const bookedTestCollections = client
+      .db("MedDiagnostic")
+      .collection("bookedTest");
     //post user
     app.post("/users", async (req, res) => {
       const user = req.body;
@@ -47,6 +51,56 @@ async function run() {
       const email = req.params.email;
       const query = { email: email };
       const result = await userCollections.findOne(query);
+      res.send(result);
+    });
+    // update user
+    app.put("/users/:email", async (req, res) => {
+      const user = req.body;
+      const email = req.params.email;
+      const filter = { email: email };
+      const updatedDoc = {
+        $set: {
+          name: user.name,
+          email: user.email,
+          image: user.image,
+          blood: user.blood,
+          district: user.district,
+          upazilla: user.upazilla,
+        },
+      };
+      const result = await userCollections.updateOne(filter, updatedDoc);
+      res.send(result);
+    });
+    // Test related api
+    // get all test
+    app.get("/allTest", async (req, res) => {
+      const page = parseInt(req.query.page);
+      const size = parseInt(req.query.size);
+      const result = await allTestCollections
+        .find()
+        .skip(page * size)
+        .limit(size)
+        .toArray();
+      res.send(result);
+    });
+    // get single test
+    app.get("/allTest/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await allTestCollections.findOne(query);
+      res.send(result);
+    });
+
+    // booked test related api
+    // get all booked test
+    app.get("/bookedTest", async (req, res) => {
+      const result = await bookedTestCollections.find().toArray();
+      res.send(result);
+    });
+    // post booked test
+    app.post("/bookedTest", async (req, res) => {
+      const bookedTest = req.body;
+      const result = await bookedTestCollections.insertOne(bookedTest);
       res.send(result);
     });
 
