@@ -93,8 +93,22 @@ async function run() {
 
     // booked test related api
     // get all booked test
+    // app.get("/bookedTest", async (req, res) => {
+    //   const result = await bookedTestCollections.find().toArray();
+    //   res.send(result);
+    // });
+    // get test by email
     app.get("/bookedTest", async (req, res) => {
-      const result = await bookedTestCollections.find().toArray();
+      const email = req.query.email;
+      const query = { email: email };
+      const result = await bookedTestCollections.find(query).toArray();
+      res.send(result);
+    });
+    // delete booked test
+    app.delete("/bookedTest/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await bookedTestCollections.deleteOne(query);
       res.send(result);
     });
     // post booked test
