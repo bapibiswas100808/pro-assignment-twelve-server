@@ -82,7 +82,7 @@ async function run() {
     app.get(
       "/users/admin/:email",
       verifyToken,
-      verifyAdmin,
+      //   verifyAdmin,
       async (req, res) => {
         const email = req.params.email;
         if (email !== req.decoded.email) {
@@ -157,13 +157,13 @@ async function run() {
     // Test related api
 
     // post a test
-    app.post("/allTest", async (req, res) => {
+    app.post("/allTest", verifyToken, verifyAdmin, async (req, res) => {
       const test = req.body;
       const result = await allTestCollections.insertOne(test);
       res.send(result);
     });
     //delete a test
-    app.delete("/allTest/:id", async (req, res) => {
+    app.delete("/allTest/:id", verifyToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await allTestCollections.deleteOne(query);
@@ -183,6 +183,24 @@ async function run() {
       const result = await allTestCollections.findOne(query);
       res.send(result);
     });
+    // update a test
+    app.patch("/allTest/:id", verifyToken, verifyAdmin, async (req, res) => {
+      const test = req.body;
+      const id = req.params.id;
+      const filter = { _id: new ObjectId(id) };
+      const updatedDoc = {
+        $set: {
+          title: test.title,
+          image: test.image,
+          price: test.price,
+          date: test.date,
+          short_description: test.short_description,
+          slots: test.slots,
+        },
+      };
+      const result = await allTestCollections.updateOne(filter, updatedDoc);
+      res.send(result);
+    });
 
     // booked test related api
     // get all booked test
@@ -197,10 +215,17 @@ async function run() {
       const result = await bookedTestCollections.find(query).toArray();
       res.send(result);
     });
-    // get test by id
+    // get test by email
     app.get("/bookedTest/:email", async (req, res) => {
       const email = req.params.email;
       const query = { email: email };
+      const result = await bookedTestCollections.find(query).toArray();
+      res.send(result);
+    });
+    // get test by id
+    app.get("/bookedTest/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
       const result = await bookedTestCollections.find(query).toArray();
       res.send(result);
     });
