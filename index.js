@@ -162,15 +162,18 @@ async function run() {
       const result = await allTestCollections.insertOne(test);
       res.send(result);
     });
+    //delete a test
+    app.delete("/allTest/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await allTestCollections.deleteOne(query);
+      res.send(result);
+    });
     // get all test
     app.get("/allTest", async (req, res) => {
       const page = parseInt(req.query.page);
       const size = parseInt(req.query.size);
-      const result = await allTestCollections
-        .find()
-        .skip(page * size)
-        .limit(size)
-        .toArray();
+      const result = await allTestCollections.find().toArray();
       res.send(result);
     });
     // get single test
