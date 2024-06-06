@@ -28,6 +28,7 @@ async function run() {
 
     const userCollections = client.db("MedDiagnostic").collection("users");
     const allTestCollections = client.db("MedDiagnostic").collection("allTest");
+    const reviewCollections = client.db("MedDiagnostic").collection("reviews");
     const allBannerCollections = client
       .db("MedDiagnostic")
       .collection("allBanner");
@@ -278,6 +279,11 @@ async function run() {
         { $set: { isActive: "true" } },
         { returnOriginal: "false" }
       );
+      res.send(result);
+    });
+    // review related api
+    app.get("/reviews", async (req, res) => {
+      const result = await reviewCollections.find().toArray();
       res.send(result);
     });
 
