@@ -32,6 +32,15 @@ async function run() {
       .db("MedDiagnostic")
       .collection("bookedTest");
 
+    // jwt related api
+    app.post("/jwt", async (req, res) => {
+      const user = req.body;
+      const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
+        expiresIn: "1h",
+      });
+      res.send({ token });
+    });
+
     //   middlewares
     const verifyToken = (req, res, next) => {
       if (!req.headers.authorization) {
@@ -56,14 +65,6 @@ async function run() {
       }
       next();
     };
-    // jwt related api
-    app.post("/jwt", async (req, res) => {
-      const user = req.body;
-      const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
-        expiresIn: "1h",
-      });
-      res.send({ token });
-    });
 
     // user related api
     //post user
@@ -122,6 +123,18 @@ async function run() {
       const result = await userCollections.updateOne(filter, updatedDoc);
       res.send(result);
     });
+    //  patch user 2
+    app.patch("/users/status/:id", async (req, res) => {
+      const id = req.params.id;
+      const filter = { _id: new ObjectId(id) };
+      const updatedDoc = {
+        $set: {
+          status: "blocked",
+        },
+      };
+      const result = await userCollections.updateOne(filter, updatedDoc);
+      res.send(result);
+    });
 
     // update user
     app.put("/users/:email", async (req, res) => {
@@ -142,6 +155,13 @@ async function run() {
       res.send(result);
     });
     // Test related api
+
+    // post a test
+    app.post("/allTest", async (req, res) => {
+      const test = req.body;
+      const result = await allTestCollections.insertOne(test);
+      res.send(result);
+    });
     // get all test
     app.get("/allTest", async (req, res) => {
       const page = parseInt(req.query.page);
@@ -170,6 +190,13 @@ async function run() {
     // get test by email
     app.get("/bookedTest", async (req, res) => {
       const email = req.query.email;
+      const query = { email: email };
+      const result = await bookedTestCollections.find(query).toArray();
+      res.send(result);
+    });
+    // get test by id
+    app.get("/bookedTest/:email", async (req, res) => {
+      const email = req.params.email;
       const query = { email: email };
       const result = await bookedTestCollections.find(query).toArray();
       res.send(result);
