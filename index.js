@@ -207,12 +207,12 @@ async function run() {
 
     // booked test related api
     // get all booked test
-    // app.get("/bookedTest", async (req, res) => {
-    //   const result = await bookedTestCollections.find().toArray();
-    //   res.send(result);
-    // });
-    // get test by email
     app.get("/bookedTest", async (req, res) => {
+      const result = await bookedTestCollections.find().toArray();
+      res.send(result);
+    });
+    // get test by email
+    app.get("/special/bookedTest", async (req, res) => {
       const email = req.query.email;
       const query = { email: email };
       const result = await bookedTestCollections.find(query).toArray();
@@ -254,6 +254,30 @@ async function run() {
     app.post("/allBanner", async (req, res) => {
       const banner = req.body;
       const result = await allBannerCollections.insertOne(banner);
+      res.send(result);
+    });
+    // delete a banner
+    app.delete("/allBanner/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await allBannerCollections.deleteOne(query);
+      res.send(result);
+    });
+    //  patch banner
+    app.patch("/allBanner/status/:id", async (req, res) => {
+      const id = req.params.id;
+      const filter = {};
+      const updatedDoc = {
+        $set: {
+          isActive: "false",
+        },
+      };
+      await allBannerCollections.updateMany(filter, updatedDoc);
+      const result = await allBannerCollections.findOneAndUpdate(
+        { _id: new ObjectId(id) },
+        { $set: { isActive: "true" } },
+        { returnOriginal: "false" }
+      );
       res.send(result);
     });
 
