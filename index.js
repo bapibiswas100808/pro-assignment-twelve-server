@@ -28,6 +28,9 @@ async function run() {
 
     const userCollections = client.db("MedDiagnostic").collection("users");
     const allTestCollections = client.db("MedDiagnostic").collection("allTest");
+    const allBannerCollections = client
+      .db("MedDiagnostic")
+      .collection("allBanner");
     const bookedTestCollections = client
       .db("MedDiagnostic")
       .collection("bookedTest");
@@ -240,6 +243,17 @@ async function run() {
     app.post("/bookedTest", async (req, res) => {
       const bookedTest = req.body;
       const result = await bookedTestCollections.insertOne(bookedTest);
+      res.send(result);
+    });
+    // banner related api
+    app.get("/allBanner", async (req, res) => {
+      const result = await allBannerCollections.find().toArray();
+      res.send(result);
+    });
+    // post a banner
+    app.post("/allBanner", async (req, res) => {
+      const banner = req.body;
+      const result = await allBannerCollections.insertOne(banner);
       res.send(result);
     });
 
