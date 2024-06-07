@@ -29,6 +29,7 @@ async function run() {
     const userCollections = client.db("MedDiagnostic").collection("users");
     const allTestCollections = client.db("MedDiagnostic").collection("allTest");
     const reviewCollections = client.db("MedDiagnostic").collection("reviews");
+    const blogCollections = client.db("MedDiagnostic").collection("blogs");
     const allBannerCollections = client
       .db("MedDiagnostic")
       .collection("allBanner");
@@ -284,6 +285,11 @@ async function run() {
     // review related api
     app.get("/reviews", async (req, res) => {
       const result = await reviewCollections.find().toArray();
+      res.send(result);
+    });
+    // blog related api
+    app.get("/blogs", async (req, res) => {
+      const result = await blogCollections.find().toArray();
       res.send(result);
     });
 
