@@ -8,7 +8,16 @@ const port = process.env.PORT || 5000;
 
 // middleware
 app.use(express.json());
-app.use(cors());
+app.use(
+  cors({
+    origin: [
+      "http://localhost:5173",
+      "http://localhost:5174",
+      "https://pro-assignment-twelve.firebaseapp.com",
+      "https://pro-assignment-twelve.web.app",
+    ],
+  })
+);
 
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.5e8b5ac.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
@@ -25,11 +34,14 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+    // await client.connect();
 
     const userCollections = client.db("MedDiagnostic").collection("users");
     const allTestCollections = client.db("MedDiagnostic").collection("allTest");
     const reviewCollections = client.db("MedDiagnostic").collection("reviews");
+    const verifiedTestCollections = client
+      .db("MedDiagnostic")
+      .collection("verified");
     const blogCollections = client.db("MedDiagnostic").collection("blogs");
     const allBannerCollections = client
       .db("MedDiagnostic")
@@ -88,7 +100,7 @@ async function run() {
     app.get(
       "/users/admin/:email",
       verifyToken,
-      //   verifyAdmin,
+      // verifyAdmin,
       async (req, res) => {
         const email = req.params.email;
         if (email !== req.decoded.email) {
@@ -105,7 +117,7 @@ async function run() {
     );
     // get all user
     app.get("/users", verifyToken, verifyAdmin, async (req, res) => {
-      console.log(req.headers);
+      // console.log(req.headers);
       const result = await userCollections.find().toArray();
       res.send(result);
     });
@@ -189,6 +201,7 @@ async function run() {
       const result = await allTestCollections.findOne(query);
       res.send(result);
     });
+
     // update a test
     app.patch("/allTest/:id", verifyToken, verifyAdmin, async (req, res) => {
       const test = req.body;
@@ -248,6 +261,19 @@ async function run() {
       const result = await bookedTestCollections.insertOne(bookedTest);
       res.send(result);
     });
+    // patch booked test
+    app.patch("/bookedTest/status/:id", async (req, res) => {
+      const id = req.params.id;
+      const filter = { _id: new ObjectId(id) };
+      const updatedDoc = {
+        $set: {
+          report_status: "Delivered",
+        },
+      };
+      const result = await bookedTestCollections.updateOne(filter, updatedDoc);
+      res.send(result);
+    });
+
     // banner related api
     app.get("/allBanner", async (req, res) => {
       const result = await allBannerCollections.find().toArray();
@@ -293,6 +319,18 @@ async function run() {
       const result = await blogCollections.find().toArray();
       res.send(result);
     });
+    // verified post a test
+    app.post("/verified", verifyToken, verifyAdmin, async (req, res) => {
+      const test = req.body;
+      const result = await verifiedTestCollections.insertOne(test);
+      res.send(result);
+    });
+    app.get("/special/verified", async (req, res) => {
+      const email = req.query.email;
+      const query = { email: email };
+      const result = await verifiedTestCollections.find(query).toArray();
+      res.send(result);
+    });
     // payment intent
     app.post("/create-payment-intent", async (req, res) => {
       const { price } = req.body;
@@ -306,8 +344,27 @@ async function run() {
         clientSecret: paymentIntent.client_secret,
       });
     });
+    // stats chart api
+    app.get("/admin-stats", async (req, res) => {
+      const users = await userCollections.estimatedDocumentCount();
+      const tests = await allTestCollections.estimatedDocumentCount();
+      const bookedTests = await bookedTestCollections.estimatedDocumentCount();
+      const deliveredTests =
+        await verifiedTestCollections.estimatedDocumentCount();
+      res.send({
+        users,
+        tests,
+        bookedTests,
+        deliveredTests,
+      });
+    });
+    // aggregate
+    app.get("/booked-stats", async (req, res) => {
+      const result = await bookedTestCollections.aggregate([]).toArray();
+      res.send(result);
+    });
     // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
+    // await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!"
     );
