@@ -248,6 +248,13 @@ async function run() {
       const result = await bookedTestCollections.find(query).toArray();
       res.send(result);
     });
+    //special get test by id
+    app.get("/res/bookedTest/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { testId: id };
+      const result = await bookedTestCollections.find(query).toArray();
+      res.send(result);
+    });
     // delete booked test
     app.delete("/bookedTest/:id", async (req, res) => {
       const id = req.params.id;
