@@ -11,7 +11,7 @@ app.use(express.json());
 app.use(
   cors({
     origin: [
-      "http://localhost:5173",
+      "http://localhost:3000",
       "http://localhost:5174",
       "https://pro-assignment-twelve.firebaseapp.com",
       "https://pro-assignment-twelve.web.app",
@@ -36,6 +36,9 @@ async function run() {
     // Connect the client to the server	(optional starting in v4.7)
     // await client.connect();
 
+    const jobCollections = client.db("tutorHub").collection("allJobs");
+    const tutorCollections = client.db("tutorHub").collection("allTutors");
+    const blogsCollections = client.db("tutorHub").collection("allBlogs");
     const userCollections = client.db("MedDiagnostic").collection("users");
     const allTestCollections = client.db("MedDiagnostic").collection("allTest");
     const reviewCollections = client.db("MedDiagnostic").collection("reviews");
@@ -85,6 +88,158 @@ async function run() {
     };
 
     // user related api
+// get all jobs
+    app.get("/allJobs", async (req, res) => {
+      const result = await jobCollections.find().toArray();
+      res.send(result);
+    });
+
+     // get specific job
+     app.get("/allJobs/:id", async (req, res) => {
+      const id = req.params.id; 
+      const query = { _id: new ObjectId(id) };
+      const result = await jobCollections.findOne(query);
+      res.send(result);
+    });
+
+    // post a job
+    app.post("/allJobs", async (req, res) => {
+      const job = req.body;
+      const result = await jobCollections.insertOne(job);
+      res.send(result);
+    });
+
+    // get all tutors
+    app.get("/allTutors", async (req, res) => {
+      const result = await tutorCollections.find().toArray();
+      res.send(result);
+    });
+    // get specific tutor
+    app.get("/allTutors/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await tutorCollections.findOne(query);
+      res.send(result);
+    });
+
+    // become a tutor
+    app.post("/allTutors", async (req, res) => {
+      const tutor = req.body;
+      const result = await tutorCollections.insertOne(tutor);
+      res.send(result);
+    });
+
+    // get all blogs
+    app.get("/allBlogs", async (req, res) => {
+      const result = await blogsCollections.find().toArray();
+      res.send(result);
+    });
+    // get specific blog
+    app.get("/allBlogs/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await blogCollections.findOne(query);
+      res.send(result);
+    });
+
+    // get all appliation
+    // get all applications with job and tutor details
+    app.get("/application", async (req, res) => {
+      try {
+        const applicationsCollection = client.db("tutorHub").collection("applications");
+        const result = await applicationsCollection.aggregate([
+          {
+            $lookup: {
+              from: "allJobs",
+              localField: "tuitionJobId",
+              foreignField: "_id",
+              as: "job"
+            }
+          },
+          {
+            $unwind: "$job"
+          },
+          {
+            $lookup: {
+              from: "allTutors",
+              localField: "tutorId",
+              foreignField: "_id",
+              as: "tutor"
+            }
+          },
+          {
+            $unwind: "$tutor"
+          }
+        ]).toArray();
+        res.send(result);
+      } catch (error) {
+        console.error("Application fetch error:", error);
+        res.status(500).json({ message: "Server error" });
+      }
+    });
+
+    // post a appliation
+    app.post("/applications", async (req, res) => {
+  try {
+    const { rate, schedule, proposal, tutorId, tuitionJobId } = req.body;
+    console.log(req.body)
+
+    if (!tutorId || !tuitionJobId) {
+      return res.status(400).json({
+        message: "Tutor ID and Job ID are required",
+      });
+    }
+
+    // Use correct collections
+    // tutorCollections, jobCollections are already defined
+    const applicationsCollection = client.db("tutorHub").collection("applications");
+
+    // Validate tutor & job
+    const tutor = await tutorCollections.findOne({ id: tutorId });
+    const job = await jobCollections.findOne({ _id: new ObjectId(tuitionJobId) });
+
+    if (!tutor || !job) {
+      return res.status(404).json({
+        message: "Tutor or Job not found",
+      });
+    }
+
+    // Create application
+    const application = {
+      rate,
+      schedule,
+      proposal,
+      tutorId: new ObjectId(tutorId),
+      tuitionJobId: new ObjectId(tuitionJobId),
+      createdAt: new Date(),
+    };
+
+    const result = await applicationsCollection.insertOne(application);
+
+    // Push application into job (one job → many applications)
+    await jobCollections.updateOne(
+      { _id: new ObjectId(tuitionJobId) },
+      { $push: { applications: result.insertedId } }
+    );
+
+    res.status(201).json({
+      success: true,
+      data: {
+        _id: result.insertedId,
+        ...application,
+      },
+    });
+  } catch (error) {
+    console.error("Application create error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+
+
+   
+
+    
     //post user
     app.post("/users", async (req, res) => {
       const user = req.body;
