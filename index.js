@@ -10,7 +10,7 @@ const port = process.env.PORT || 5000;
 app.use(express.json());
 app.use(
   cors({
-    origin: ["http://localhost:3000", "https://www.tutormediabd.com/"],
+    origin: ["http://localhost:3000", "https://www.tutormediabd.com"],
   })
 );
 
@@ -35,6 +35,9 @@ async function run() {
     const tutorCollections = client.db("tutorHub").collection("allTutors");
     const blogsCollections = client.db("tutorHub").collection("allBlogs");
     const countersCollection = client.db("tutorHub").collection("counters");
+    const applicationsCollection = client
+      .db("tutorHub")
+      .collection("applications");
 
     // jwt related api
     app.post("/jwt", async (req, res) => {
@@ -207,13 +210,9 @@ async function run() {
       res.send(result);
     });
 
-    // get all appliation
     // get all applications with job and tutor details
-    app.get("/application", async (req, res) => {
+    app.get("/applications", async (req, res) => {
       try {
-        const applicationsCollection = client
-          .db("tutorHub")
-          .collection("applications");
         const result = await applicationsCollection
           .aggregate([
             {
