@@ -10,12 +10,7 @@ const port = process.env.PORT || 5000;
 app.use(express.json());
 app.use(
   cors({
-    origin: [
-      "http://localhost:3000",
-      "http://localhost:5174",
-      "https://pro-assignment-twelve.firebaseapp.com",
-      "https://pro-assignment-twelve.web.app",
-    ],
+    origin: ["http://localhost:3000", "https://www.tutormediabd.com/"],
   })
 );
 
@@ -39,19 +34,7 @@ async function run() {
     const jobCollections = client.db("tutorHub").collection("allJobs");
     const tutorCollections = client.db("tutorHub").collection("allTutors");
     const blogsCollections = client.db("tutorHub").collection("allBlogs");
-    const userCollections = client.db("MedDiagnostic").collection("users");
-    const allTestCollections = client.db("MedDiagnostic").collection("allTest");
-    const reviewCollections = client.db("MedDiagnostic").collection("reviews");
-    const verifiedTestCollections = client
-      .db("MedDiagnostic")
-      .collection("verified");
-    const blogCollections = client.db("MedDiagnostic").collection("blogs");
-    const allBannerCollections = client
-      .db("MedDiagnostic")
-      .collection("allBanner");
-    const bookedTestCollections = client
-      .db("MedDiagnostic")
-      .collection("bookedTest");
+    const countersCollection = client.db("tutorHub").collection("counters");
 
     // jwt related api
     app.post("/jwt", async (req, res) => {
@@ -88,15 +71,15 @@ async function run() {
     };
 
     // user related api
-// get all jobs
+    // get all jobs
     app.get("/allJobs", async (req, res) => {
       const result = await jobCollections.find().toArray();
       res.send(result);
     });
 
-     // get specific job
-     app.get("/allJobs/:id", async (req, res) => {
-      const id = req.params.id; 
+    // get specific job
+    app.get("/allJobs/:id", async (req, res) => {
+      const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await jobCollections.findOne(query);
       res.send(result);
@@ -104,9 +87,40 @@ async function run() {
 
     // post a job
     app.post("/allJobs", async (req, res) => {
-      const job = req.body;
-      const result = await jobCollections.insertOne(job);
-      res.send(result);
+      try {
+        const job = req.body;
+
+        // Generate unique numeric ID for the job
+        const counterResult = await countersCollection.findOneAndUpdate(
+          { _id: "jobId" },
+          { $inc: { seq: 1 } },
+          { upsert: true, returnDocument: "after" }
+        );
+
+        // Fallback if findOneAndUpdate returns null
+        let newId;
+        if (counterResult && counterResult.value && counterResult.value.seq) {
+          newId = counterResult.value.seq;
+        } else {
+          const counterDoc = await countersCollection.findOne({ _id: "jobId" });
+          if (!counterDoc) {
+            return res
+              .status(500)
+              .send({ message: "Failed to generate unique ID" });
+          }
+          newId = counterDoc.seq;
+        }
+
+        job.id = newId;
+        job.createdAt = new Date();
+        // job.applications = job.applications || [];
+
+        const result = await jobCollections.insertOne(job);
+        res.status(201).send(result);
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: error.message });
+      }
     });
 
     // get all tutors
@@ -116,17 +130,68 @@ async function run() {
     });
     // get specific tutor
     app.get("/allTutors/:id", async (req, res) => {
-      const id = req.params.id;
-      const query = { _id: new ObjectId(id) };
-      const result = await tutorCollections.findOne(query);
-      res.send(result);
+      const { id } = req.params;
+
+      // Try matching common possibilities: string id, numeric id, documentId, or _id
+      const orClauses = [{ id }, { id: Number(id) }, { documentId: id }];
+      try {
+        if (ObjectId.isValid(id)) orClauses.push({ _id: new ObjectId(id) });
+      } catch (_) {}
+
+      const tutor = await tutorCollections.findOne({ $or: orClauses });
+
+      if (!tutor) {
+        return res.status(404).json({ message: "Tutor not found" });
+      }
+      return res.json(tutor);
     });
 
     // become a tutor
     app.post("/allTutors", async (req, res) => {
-      const tutor = req.body;
-      const result = await tutorCollections.insertOne(tutor);
-      res.send(result);
+      try {
+        const tutor = req.body; // ✅ get data from request
+
+        // Generate unique numeric ID
+        const counterResult = await countersCollection.findOneAndUpdate(
+          { _id: "tutorId" },
+          { $inc: { seq: 1 } },
+          { upsert: true, returnDocument: "after" } // correct for MongoDB driver v4+
+        );
+
+        // Fallback if findOneAndUpdate returns null
+        let newId;
+        if (counterResult && counterResult.value && counterResult.value.seq) {
+          newId = counterResult.value.seq;
+        } else {
+          const counterDoc = await countersCollection.findOne({
+            _id: "tutorId",
+          });
+          if (!counterDoc) {
+            return res
+              .status(500)
+              .send({ message: "Failed to generate unique ID" });
+          }
+          newId = counterDoc.seq;
+        }
+
+        tutor.id = newId;
+        tutor.createdAt = new Date();
+
+        // Check email uniqueness
+        const exists = await tutorCollections.findOne({ email: tutor.email });
+        if (exists) {
+          return res
+            .status(400)
+            .send({ message: "This email is already registered" });
+        }
+
+        // Insert tutor
+        const result = await tutorCollections.insertOne(tutor);
+        res.send(result);
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: error.message });
+      }
     });
 
     // get all blogs
@@ -146,31 +211,35 @@ async function run() {
     // get all applications with job and tutor details
     app.get("/application", async (req, res) => {
       try {
-        const applicationsCollection = client.db("tutorHub").collection("applications");
-        const result = await applicationsCollection.aggregate([
-          {
-            $lookup: {
-              from: "allJobs",
-              localField: "tuitionJobId",
-              foreignField: "_id",
-              as: "job"
-            }
-          },
-          {
-            $unwind: "$job"
-          },
-          {
-            $lookup: {
-              from: "allTutors",
-              localField: "tutorId",
-              foreignField: "_id",
-              as: "tutor"
-            }
-          },
-          {
-            $unwind: "$tutor"
-          }
-        ]).toArray();
+        const applicationsCollection = client
+          .db("tutorHub")
+          .collection("applications");
+        const result = await applicationsCollection
+          .aggregate([
+            {
+              $lookup: {
+                from: "allJobs",
+                localField: "tuitionJobId",
+                foreignField: "_id",
+                as: "job",
+              },
+            },
+            {
+              $unwind: "$job",
+            },
+            {
+              $lookup: {
+                from: "allTutors",
+                localField: "tutorId",
+                foreignField: "_id",
+                as: "tutor",
+              },
+            },
+            {
+              $unwind: "$tutor",
+            },
+          ])
+          .toArray();
         res.send(result);
       } catch (error) {
         console.error("Application fetch error:", error);
@@ -180,66 +249,65 @@ async function run() {
 
     // post a appliation
     app.post("/applications", async (req, res) => {
-  try {
-    const { rate, schedule, proposal, tutorId, tuitionJobId } = req.body;
-    console.log(req.body)
+      try {
+        const { rate, schedule, proposal, tutorId, tuitionJobId } = req.body;
+        console.log(req.body);
 
-    if (!tutorId || !tuitionJobId) {
-      return res.status(400).json({
-        message: "Tutor ID and Job ID are required",
-      });
-    }
+        if (!tutorId || !tuitionJobId) {
+          return res.status(400).json({
+            message: "Tutor ID and Job ID are required",
+          });
+        }
 
-    // Use correct collections
-    // tutorCollections, jobCollections are already defined
-    const applicationsCollection = client.db("tutorHub").collection("applications");
+        // Use correct collections
+        // tutorCollections, jobCollections are already defined
+        const applicationsCollection = client
+          .db("tutorHub")
+          .collection("applications");
 
-    // Validate tutor & job
-    const tutor = await tutorCollections.findOne({ id: tutorId });
-    const job = await jobCollections.findOne({ _id: new ObjectId(tuitionJobId) });
+        // Validate tutor & job
+        const tutor = await tutorCollections.findOne({ id: tutorId });
+        const job = await jobCollections.findOne({
+          _id: new ObjectId(tuitionJobId),
+        });
 
-    if (!tutor || !job) {
-      return res.status(404).json({
-        message: "Tutor or Job not found",
-      });
-    }
+        if (!tutor || !job) {
+          return res.status(404).json({
+            message: "Tutor or Job not found",
+          });
+        }
 
-    // Create application
-    const application = {
-      rate,
-      schedule,
-      proposal,
-      tutorId: new ObjectId(tutorId),
-      tuitionJobId: new ObjectId(tuitionJobId),
-      createdAt: new Date(),
-    };
+        // Create application
+        const application = {
+          rate,
+          schedule,
+          proposal,
+          tutorId: new ObjectId(tutorId),
+          tuitionJobId: new ObjectId(tuitionJobId),
+          createdAt: new Date(),
+        };
 
-    const result = await applicationsCollection.insertOne(application);
+        const result = await applicationsCollection.insertOne(application);
 
-    // Push application into job (one job → many applications)
-    await jobCollections.updateOne(
-      { _id: new ObjectId(tuitionJobId) },
-      { $push: { applications: result.insertedId } }
-    );
+        // Push application into job (one job → many applications)
+        await jobCollections.updateOne(
+          { _id: new ObjectId(tuitionJobId) },
+          { $push: { applications: result.insertedId } }
+        );
 
-    res.status(201).json({
-      success: true,
-      data: {
-        _id: result.insertedId,
-        ...application,
-      },
+        res.status(201).json({
+          success: true,
+          data: {
+            _id: result.insertedId,
+            ...application,
+          },
+        });
+      } catch (error) {
+        console.error("Application create error:", error);
+        res.status(500).json({ message: "Server error" });
+      }
     });
-  } catch (error) {
-    console.error("Application create error:", error);
-    res.status(500).json({ message: "Server error" });
-  }
-});
 
-
-
-   
-
-    
     //post user
     app.post("/users", async (req, res) => {
       const user = req.body;
