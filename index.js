@@ -132,21 +132,43 @@ async function run() {
       res.send(result);
     });
     // get specific tutor
+
+    // app.get("/allTutors/:id", async (req, res) => {
+    //   const { id } = req.params;
+    //   // Try matching common possibilities: string id, numeric id, documentId, or _id
+    //   const orClauses = [{ id }, { id: Number(id) }, { documentId: id }];
+    //   try {
+    //     if (ObjectId.isValid(id)) orClauses.push({ _id: new ObjectId(id) });
+    //   } catch (_) {}
+
+    //   const tutor = await tutorCollections.findOne({ $or: orClauses });
+
+    //   if (!tutor) {
+    //     return res.status(404).json({ message: "Tutor not found" });
+    //   }
+    //   return res.json(tutor);
+    // });
+
     app.get("/allTutors/:id", async (req, res) => {
       const { id } = req.params;
 
-      // Try matching common possibilities: string id, numeric id, documentId, or _id
+      // Build possible search queries
       const orClauses = [{ id }, { id: Number(id) }, { documentId: id }];
-      try {
-        if (ObjectId.isValid(id)) orClauses.push({ _id: new ObjectId(id) });
-      } catch (_) {}
 
-      const tutor = await tutorCollections.findOne({ $or: orClauses });
-
-      if (!tutor) {
-        return res.status(404).json({ message: "Tutor not found" });
+      if (ObjectId.isValid(id)) {
+        orClauses.push({ _id: new ObjectId(id) });
       }
-      return res.json(tutor);
+
+      try {
+        const tutor = await tutorCollections.findOne({ $or: orClauses });
+
+        if (!tutor) return res.status(404).json({ message: "Tutor not found" });
+
+        return res.json(tutor); // will include email, etc.
+      } catch (error) {
+        console.error(error);
+        return res.status(500).json({ message: "Server error" });
+      }
     });
 
     // become a tutor
@@ -196,6 +218,39 @@ async function run() {
         res.status(500).send({ message: error.message });
       }
     });
+
+// update tutor profile
+app.put("/allTutors/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Convert id to number for numeric ID
+    const numericId = Number(id);
+    if (isNaN(numericId)) {
+      return res.status(400).json({ message: "Invalid tutor id" });
+    }
+
+    const filter = { id: numericId };
+
+    const result = await tutorCollections.findOneAndUpdate(
+      filter,
+      { $set: req.body },
+      { returnDocument: "after" } // return updated document
+    );
+
+    if (!result.value) {
+      return res.status(404).json({ message: "Tutor not found" });
+    }
+
+    res.json(result.value);
+  } catch (error) {
+    console.error("Update failed:", error);
+    res.status(500).json({ message: error.message || "Internal server error" });
+  }
+});
+
+
+
 
     // get all blogs
     app.get("/allBlogs", async (req, res) => {
