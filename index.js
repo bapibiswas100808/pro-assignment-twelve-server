@@ -219,38 +219,37 @@ async function run() {
       }
     });
 
-// update tutor profile
-app.put("/allTutors/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
+    // update tutor profile
+    app.put("/allTutors/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
 
-    // Convert id to number for numeric ID
-    const numericId = Number(id);
-    if (isNaN(numericId)) {
-      return res.status(400).json({ message: "Invalid tutor id" });
-    }
+        // Convert id to number for numeric ID
+        const numericId = Number(id);
+        if (isNaN(numericId)) {
+          return res.status(400).json({ message: "Invalid tutor id" });
+        }
 
-    const filter = { id: numericId };
+        const filter = { id: numericId };
 
-    const result = await tutorCollections.findOneAndUpdate(
-      filter,
-      { $set: req.body },
-      { returnDocument: "after" } // return updated document
-    );
+        const result = await tutorCollections.findOneAndUpdate(
+          filter,
+          { $set: req.body },
+          { returnDocument: "after" } // return updated document
+        );
 
-    if (!result.value) {
-      return res.status(404).json({ message: "Tutor not found" });
-    }
+        if (!result.value) {
+          return res.status(404).json({ message: "Tutor not found" });
+        }
 
-    res.json(result.value);
-  } catch (error) {
-    console.error("Update failed:", error);
-    res.status(500).json({ message: error.message || "Internal server error" });
-  }
-});
-
-
-
+        res.json(result.value);
+      } catch (error) {
+        console.error("Update failed:", error);
+        res
+          .status(500)
+          .json({ message: error.message || "Internal server error" });
+      }
+    });
 
     // get all blogs
     app.get("/allBlogs", async (req, res) => {
