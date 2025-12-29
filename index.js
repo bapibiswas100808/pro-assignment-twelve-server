@@ -379,21 +379,35 @@ async function run() {
     });
 
     // patch job approval (admin only)
-    app.patch("/allJobs/isApproved/:id", async (req, res) => {
-      try {
-        const id = req.params.id;
-        const filter = { _id: new ObjectId(id) };
-        const updatedDoc = {
-          $set: { isApproved: true, approvedAt: new Date() },
-        };
-        const result = await jobCollections.updateOne(filter, updatedDoc);
-        res.send(result);
-      } catch (error) {
-        console.error(error);
-        res.status(500).send({ message: error.message });
-      }
-    });
+const { ObjectId } = require("mongodb");
 
+app.patch("/allJobs/isApproved/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid ID" });
+    }
+
+    const filter = { _id: new ObjectId(id) };
+    const update = {
+      $set: {
+        isApproved: req.body.isApproved,
+        approvedAt: new Date(),
+      },
+    };
+
+    const result = await jobCollections.updateOne(filter, update);
+
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+
+
+    // blog related api
     // get all blogs
     app.get("/allBlogs", async (req, res) => {
       const result = await blogsCollections.find().toArray();
@@ -515,6 +529,7 @@ async function run() {
       const result = await userCollections.insertOne(user);
       res.send(result);
     });
+
     // get exact user
     app.get(
       "/users/admin/:email",
@@ -534,12 +549,14 @@ async function run() {
         res.send({ admin });
       }
     );
+
     // get all user
     app.get("/users", verifyToken, verifyAdmin, async (req, res) => {
       // console.log(req.headers);
       const result = await userCollections.find().toArray();
       res.send(result);
     });
+
     // get specific user
     app.get("/users/:email", async (req, res) => {
       const email = req.params.email;
@@ -581,6 +598,7 @@ async function run() {
         res.status(500).send({ message: error.message });
       }
     });
+
     //  patch user 2
     app.patch("/users/status/:id", async (req, res) => {
       const id = req.params.id;
@@ -620,6 +638,7 @@ async function run() {
       const result = await allTestCollections.insertOne(test);
       res.send(result);
     });
+
     //delete a test
     app.delete("/allTest/:id", verifyToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
@@ -627,6 +646,7 @@ async function run() {
       const result = await allTestCollections.deleteOne(query);
       res.send(result);
     });
+
     // get all test
     app.get("/allTest", async (req, res) => {
       const page = parseInt(req.query.page);
@@ -634,6 +654,7 @@ async function run() {
       const result = await allTestCollections.find().toArray();
       res.send(result);
     });
+
     // get single test
     app.get("/allTest/:id", async (req, res) => {
       const id = req.params.id;
