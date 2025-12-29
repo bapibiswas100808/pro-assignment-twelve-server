@@ -3,6 +3,7 @@ const cors = require("cors");
 const app = express();
 const jwt = require("jsonwebtoken");
 require("dotenv").config();
+const bcrypt = require("bcryptjs");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const port = process.env.PORT || 5000;
 
@@ -38,6 +39,7 @@ async function run() {
     const applicationsCollection = client
       .db("tutorHub")
       .collection("applications");
+    const userCollections = client.db("tutorHub").collection("users");
 
     // jwt related api
     app.post("/jwt", async (req, res) => {
@@ -72,6 +74,55 @@ async function run() {
       }
       next();
     };
+
+    // login (supports both normal users and tutors)
+    app.post("/login", async (req, res) => {
+      const { email, password } = req.body;
+      const query = { email: email };
+      // Then try tutors
+      const tutor = await tutorCollections.findOne(query);
+      if (!tutor) {
+        return res.status(401).send({ message: "Invalid credentials" });
+      }
+      // Compare password — try bcrypt first, then fallback to plain-text comparison for legacy accounts
+      let match = false;
+      try {
+        if (tutor.password) {
+          match = await bcrypt.compare(password || "", tutor.password);
+        }
+      } catch (err) {
+        // if bcrypt throws for malformed hash, ignore and fallback to string comparison
+        match = false;
+      }
+      // Fallback for legacy plain-text passwords stored in DB
+      if (!match) {
+        match = (password || "") === (tutor.password || "");
+      }
+
+      if (!match) {
+        return res.status(401).send({ message: "Invalid credentials" });
+      }
+
+      // Create JWT and return tutor (without password) and redirect URL for frontend
+      const token = jwt.sign(
+        { email: tutor.email, role: "tutor" },
+        process.env.ACCESS_TOKEN_SECRET,
+        { expiresIn: "1h" }
+      );
+      const { password: pwd, ...safeTutor } = tutor;
+
+      const redirectUrl = process.env.FRONTEND_URL
+        ? `${process.env.FRONTEND_URL}/profile`
+        : "http://localhost:3000/profile";
+
+      res.send({
+        success: true,
+        role: "tutor",
+        tutor: safeTutor,
+        token,
+        redirect: redirectUrl,
+      });
+    });
 
     // user related api
     // get all jobs
@@ -210,8 +261,42 @@ async function run() {
             .send({ message: "This email is already registered" });
         }
 
-        // Insert tutor
+        // Require password and hash it
+        if (!tutor.password) {
+          return res.status(400).send({ message: "Password is required" });
+        }
+        const hashedPassword = await bcrypt.hash(tutor.password, 10);
+        tutor.password = hashedPassword;
+        tutor.role = "tutor";
+
+        // Insert tutor (don't return password in response)
         const result = await tutorCollections.insertOne(tutor);
+        const { password, ...safeTutor } = tutor;
+        res.status(201).send({
+          success: true,
+          insertedId: result.insertedId,
+          tutor: safeTutor,
+        });
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: error.message });
+      }
+    });
+
+    // patch tutor flags (admin only)
+    app.patch("/allTutors/isApproved/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const orClauses = [{ id }, { id: Number(id) }, { documentId: id }];
+        if (ObjectId.isValid(id)) orClauses.push({ _id: new ObjectId(id) });
+        const tutor = await tutorCollections.findOne({ $or: orClauses });
+        if (!tutor) return res.status(404).json({ message: "Tutor not found" });
+
+        const filter = tutor._id ? { _id: tutor._id } : { id: tutor.id };
+        const updatedDoc = {
+          $set: { isApproved: true, approvedAt: new Date() },
+        };
+        const result = await tutorCollections.updateOne(filter, updatedDoc);
         res.send(result);
       } catch (error) {
         console.error(error);
@@ -219,35 +304,93 @@ async function run() {
       }
     });
 
-    // update tutor profile
+    app.patch("/allTutors/isPremium/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const orClauses = [{ id }, { id: Number(id) }, { documentId: id }];
+        if (ObjectId.isValid(id)) orClauses.push({ _id: new ObjectId(id) });
+        const tutor = await tutorCollections.findOne({ $or: orClauses });
+        if (!tutor) return res.status(404).json({ message: "Tutor not found" });
+
+        const filter = tutor._id ? { _id: tutor._id } : { id: tutor.id };
+        const updatedDoc = {
+          $set: { isPremium: true, premiumAt: new Date() },
+        };
+        const result = await tutorCollections.updateOne(filter, updatedDoc);
+        res.send(result);
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: error.message });
+      }
+    });
+
+    app.patch("/allTutors/isVerified/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const orClauses = [{ id }, { id: Number(id) }, { documentId: id }];
+        if (ObjectId.isValid(id)) orClauses.push({ _id: new ObjectId(id) });
+        const tutor = await tutorCollections.findOne({ $or: orClauses });
+        if (!tutor) return res.status(404).json({ message: "Tutor not found" });
+
+        const filter = tutor._id ? { _id: tutor._id } : { id: tutor.id };
+        const updatedDoc = {
+          $set: { isVerified: true, verifiedAt: new Date() },
+        };
+        const result = await tutorCollections.updateOne(filter, updatedDoc);
+        res.send(result);
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: error.message });
+      }
+    });
+
+    // Update tutor profile
     app.put("/allTutors/:id", async (req, res) => {
       try {
         const { id } = req.params;
+        const profileData = req.body;
 
-        // Convert id to number for numeric ID
-        const numericId = Number(id);
-        if (isNaN(numericId)) {
-          return res.status(400).json({ message: "Invalid tutor id" });
-        }
+        // Build possible search queries
+        const orClauses = [{ id }, { id: Number(id) }, { documentId: id }];
+        if (ObjectId.isValid(id)) orClauses.push({ _id: new ObjectId(id) });
 
-        const filter = { id: numericId };
+        const tutor = await tutorCollections.findOne({ $or: orClauses });
+        if (!tutor) return res.status(404).json({ message: "Tutor not found" });
 
-        const result = await tutorCollections.findOneAndUpdate(
-          filter,
-          { $set: req.body },
-          { returnDocument: "after" } // return updated document
-        );
+        const filter = tutor._id ? { _id: tutor._id } : { id: tutor.id };
+        const updatedDoc = {
+          $set: { ...profileData, updatedAt: new Date() },
+        };
 
-        if (!result.value) {
+        const result = await tutorCollections.updateOne(filter, updatedDoc);
+
+        if (result.matchedCount === 0) {
           return res.status(404).json({ message: "Tutor not found" });
         }
 
-        res.json(result.value);
+        res.json({
+          message: "Tutor profile updated successfully",
+          modifiedCount: result.modifiedCount,
+        });
       } catch (error) {
-        console.error("Update failed:", error);
-        res
-          .status(500)
-          .json({ message: error.message || "Internal server error" });
+        console.error(error);
+        res.status(500).json({ message: error.message });
+      }
+    });
+
+    // patch job approval (admin only)
+    app.patch("/allJobs/isApproved/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+        const filter = { _id: new ObjectId(id) };
+        const updatedDoc = {
+          $set: { isApproved: true, approvedAt: new Date() },
+        };
+        const result = await jobCollections.updateOne(filter, updatedDoc);
+        res.send(result);
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: error.message });
       }
     });
 
@@ -405,17 +548,38 @@ async function run() {
       res.send(result);
     });
 
-    //  patch user
-    app.patch("/users/admin/:id", async (req, res) => {
-      const id = req.params.id;
-      const filter = { _id: new ObjectId(id) };
-      const updatedDoc = {
-        $set: {
-          role: "admin",
-        },
-      };
-      const result = await userCollections.updateOne(filter, updatedDoc);
-      res.send(result);
+    //  patch user (assign admin) — only one admin allowed
+    app.patch("/users/admin/:id", verifyToken, async (req, res) => {
+      try {
+        const id = req.params.id;
+
+        // Check existing admin
+        const existingAdmin = await userCollections.findOne({ role: "admin" });
+
+        // If an admin already exists, only that admin can assign admin and we must ensure we don't create a second admin
+        if (existingAdmin) {
+          if (req.decoded?.email !== existingAdmin.email) {
+            return res
+              .status(403)
+              .send({ message: "Only current admin can assign admin role" });
+          }
+          if (existingAdmin._id.toString() !== id) {
+            return res.status(400).send({ message: "Only one admin allowed" });
+          }
+        }
+
+        const filter = { _id: new ObjectId(id) };
+        const updatedDoc = {
+          $set: {
+            role: "admin",
+          },
+        };
+        const result = await userCollections.updateOne(filter, updatedDoc);
+        res.send(result);
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: error.message });
+      }
     });
     //  patch user 2
     app.patch("/users/status/:id", async (req, res) => {
