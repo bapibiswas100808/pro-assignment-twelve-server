@@ -293,8 +293,9 @@ async function run() {
         if (!tutor) return res.status(404).json({ message: "Tutor not found" });
 
         const filter = tutor._id ? { _id: tutor._id } : { id: tutor.id };
+        const newApprovedStatus = !tutor.isApproved;
         const updatedDoc = {
-          $set: { isApproved: true, approvedAt: new Date() },
+          $set: { isApproved: newApprovedStatus, approvedAt: new Date() },
         };
         const result = await tutorCollections.updateOne(filter, updatedDoc);
         res.send(result);
@@ -313,8 +314,9 @@ async function run() {
         if (!tutor) return res.status(404).json({ message: "Tutor not found" });
 
         const filter = tutor._id ? { _id: tutor._id } : { id: tutor.id };
+        const newPremiumStatus = !tutor.isPremium;
         const updatedDoc = {
-          $set: { isPremium: true, premiumAt: new Date() },
+          $set: { isPremium: newPremiumStatus, premiumAt: new Date() },
         };
         const result = await tutorCollections.updateOne(filter, updatedDoc);
         res.send(result);
@@ -333,8 +335,9 @@ async function run() {
         if (!tutor) return res.status(404).json({ message: "Tutor not found" });
 
         const filter = tutor._id ? { _id: tutor._id } : { id: tutor.id };
+        const newVerifiedStatus = !tutor.isVerified;
         const updatedDoc = {
-          $set: { isVerified: true, verifiedAt: new Date() },
+          $set: { isVerified: newVerifiedStatus, verifiedAt: new Date() },
         };
         const result = await tutorCollections.updateOne(filter, updatedDoc);
         res.send(result);
@@ -379,33 +382,30 @@ async function run() {
     });
 
     // patch job approval (admin only)
-const { ObjectId } = require("mongodb");
 
-app.patch("/allJobs/isApproved/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
+    app.patch("/allJobs/isApproved/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
 
-    if (!ObjectId.isValid(id)) {
-      return res.status(400).json({ message: "Invalid ID" });
-    }
+        if (!ObjectId.isValid(id)) {
+          return res.status(400).json({ message: "Invalid ID" });
+        }
 
-    const filter = { _id: new ObjectId(id) };
-    const update = {
-      $set: {
-        isApproved: req.body.isApproved,
-        approvedAt: new Date(),
-      },
-    };
+        const filter = { _id: new ObjectId(id) };
+        const update = {
+          $set: {
+            isApproved: req.body.isApproved,
+            approvedAt: new Date(),
+          },
+        };
 
-    const result = await jobCollections.updateOne(filter, update);
+        const result = await jobCollections.updateOne(filter, update);
 
-    res.json(result);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
-
-
+        res.json(result);
+      } catch (error) {
+        res.status(500).json({ message: error.message });
+      }
+    });
 
     // blog related api
     // get all blogs
