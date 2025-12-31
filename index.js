@@ -130,6 +130,15 @@ async function run() {
       const result = await jobCollections.find().toArray();
       res.send(result);
     });
+    // get all jobs deleted
+    app.get("/allJobs/deleted", async (req, res) => {
+      const result = await jobCollections
+        .find({
+          $or: [{ isDeleted: false }, { isDeleted: { $exists: false } }],
+        })
+        .toArray();
+      res.send(result);
+    });
 
     // get specific job
     app.get("/allJobs/:id", async (req, res) => {
@@ -182,6 +191,17 @@ async function run() {
       const result = await tutorCollections.find().toArray();
       res.send(result);
     });
+
+    // get all tutors
+    app.get("/allTutors/deleted", async (req, res) => {
+      const result = await tutorCollections
+        .find({
+          $or: [{ isDeleted: false }, { isDeleted: { $exists: false } }],
+        })
+        .toArray();
+      res.send(result);
+    });
+    
     // get specific tutor
 
     // app.get("/allTutors/:id", async (req, res) => {
@@ -379,28 +399,185 @@ async function run() {
     });
 
     // patch job approval (admin only)
-const { ObjectId } = require("mongodb");
+    const { ObjectId } = require("mongodb");
 
-app.patch("/allJobs/isApproved/:id", async (req, res) => {
+    app.patch("/allJobs/isApproved/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+
+        if (!ObjectId.isValid(id)) {
+          return res.status(400).json({ message: "Invalid ID" });
+        }
+
+        const filter = { _id: new ObjectId(id) };
+        const update = {
+          $set: {
+            isApproved: req.body.isApproved,
+            approvedAt: new Date(),
+          },
+        };
+
+        const result = await jobCollections.updateOne(filter, update);
+
+        res.json(result);
+      } catch (error) {
+        res.status(500).json({ message: error.message });
+      }
+    });
+
+    // soft delete tutor (admin only)
+    app.patch("/allTutors/delete/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+
+        const orClauses = [{ id }, { id: Number(id) }, { documentId: id }];
+        if (ObjectId.isValid(id)) orClauses.push({ _id: new ObjectId(id) });
+
+        const tutor = await tutorCollections.findOne({ $or: orClauses });
+        if (!tutor) {
+          return res.status(404).json({ message: "Tutor not found" });
+        }
+
+        const filter = tutor._id ? { _id: tutor._id } : { id: tutor.id };
+
+        const updateDoc = {
+          $set: {
+            isDeleted: true,
+            deletedAt: new Date(),
+          },
+        };
+
+        const result = await tutorCollections.updateOne(filter, updateDoc);
+        res.send(result);
+      } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: error.message });
+      }
+    });
+
+    // restore deleted tutor
+    app.patch("/allTutors/restore/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+
+        const orClauses = [{ id }, { id: Number(id) }, { documentId: id }];
+        if (ObjectId.isValid(id)) orClauses.push({ _id: new ObjectId(id) });
+
+        const tutor = await tutorCollections.findOne({ $or: orClauses });
+        if (!tutor) {
+          return res.status(404).json({ message: "Tutor not found" });
+        }
+
+        const filter = tutor._id ? { _id: tutor._id } : { id: tutor.id };
+
+        const updateDoc = {
+          $set: {
+            isDeleted: false,
+          },
+          $unset: {
+            deletedAt: "",
+          },
+        };
+
+        const result = await tutorCollections.updateOne(filter, updateDoc);
+        res.send(result);
+      } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: error.message });
+      }
+    });
+
+    // soft delete tuition job (admin only)
+    app.patch("/allJobs/delete/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+
+        const orClauses = [{ id }, { id: Number(id) }, { documentId: id }];
+        if (ObjectId.isValid(id)) orClauses.push({ _id: new ObjectId(id) });
+
+        const job = await jobCollections.findOne({ $or: orClauses });
+        if (!job) {
+          return res.status(404).json({ message: "Job not found" });
+        }
+
+        const filter = job._id ? { _id: job._id } : { id: job.id };
+
+        const updateDoc = {
+          $set: {
+            isDeleted: true,
+            deletedAt: new Date(),
+          },
+        };
+
+        const result = await jobCollections.updateOne(filter, updateDoc);
+
+        res.json({
+          success: true,
+          modifiedCount: result.modifiedCount,
+        });
+      } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: error.message });
+      }
+    });
+
+    // restore deleted tuition job
+    app.patch("/allJobs/restore/:id", async (req, res) => {
   try {
     const { id } = req.params;
 
-    if (!ObjectId.isValid(id)) {
-      return res.status(400).json({ message: "Invalid ID" });
+    const orClauses = [{ id }, { id: Number(id) }, { documentId: id }];
+    if (ObjectId.isValid(id)) orClauses.push({ _id: new ObjectId(id) });
+
+    const job = await jobCollections.findOne({ $or: orClauses });
+    if (!job) {
+      return res.status(404).json({ message: "Job not found" });
     }
 
-    const filter = { _id: new ObjectId(id) };
-    const update = {
+    const filter = job._id ? { _id: job._id } : { id: job.id };
+
+    const result = await jobCollections.updateOne(filter, {
       $set: {
-        isApproved: req.body.isApproved,
-        approvedAt: new Date(),
+        isDeleted: false,
+        deletedAt: null,
       },
-    };
+    });
 
-    const result = await jobCollections.updateOne(filter, update);
-
-    res.json(result);
+    res.json({
+      success: true,
+      modifiedCount: result.modifiedCount,
+    });
   } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// update tuition job
+app.patch("/allJobs/update/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title } = req.body; // fields you want to update
+
+    if (!title) {
+      return res.status(400).json({ message: "Title is required" });
+    }
+
+    const orClauses = [{ id }, { id: Number(id) }, { documentId: id }];
+    if (ObjectId.isValid(id)) orClauses.push({ _id: new ObjectId(id) });
+
+    const job = await jobCollections.findOne({ $or: orClauses });
+    if (!job) return res.status(404).json({ message: "Job not found" });
+
+    const filter = job._id ? { _id: job._id } : { id: job.id };
+
+    const result = await jobCollections.updateOne(filter, {
+      $set: { title },
+    });
+
+    res.json({ success: true, modifiedCount: result.modifiedCount, title });
+  } catch (error) {
+    console.error(error);
     res.status(500).json({ message: error.message });
   }
 });
