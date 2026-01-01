@@ -313,8 +313,9 @@ async function run() {
         if (!tutor) return res.status(404).json({ message: "Tutor not found" });
 
         const filter = tutor._id ? { _id: tutor._id } : { id: tutor.id };
+        const newApprovedStatus = !tutor.isApproved;
         const updatedDoc = {
-          $set: { isApproved: true, approvedAt: new Date() },
+          $set: { isApproved: newApprovedStatus, approvedAt: new Date() },
         };
         const result = await tutorCollections.updateOne(filter, updatedDoc);
         res.send(result);
@@ -333,8 +334,9 @@ async function run() {
         if (!tutor) return res.status(404).json({ message: "Tutor not found" });
 
         const filter = tutor._id ? { _id: tutor._id } : { id: tutor.id };
+        const newPremiumStatus = !tutor.isPremium;
         const updatedDoc = {
-          $set: { isPremium: true, premiumAt: new Date() },
+          $set: { isPremium: newPremiumStatus, premiumAt: new Date() },
         };
         const result = await tutorCollections.updateOne(filter, updatedDoc);
         res.send(result);
@@ -353,8 +355,9 @@ async function run() {
         if (!tutor) return res.status(404).json({ message: "Tutor not found" });
 
         const filter = tutor._id ? { _id: tutor._id } : { id: tutor.id };
+        const newVerifiedStatus = !tutor.isVerified;
         const updatedDoc = {
-          $set: { isVerified: true, verifiedAt: new Date() },
+          $set: { isVerified: newVerifiedStatus, verifiedAt: new Date() },
         };
         const result = await tutorCollections.updateOne(filter, updatedDoc);
         res.send(result);
@@ -433,7 +436,6 @@ async function run() {
     });
 
     // patch job approval (admin only)
-    const { ObjectId } = require("mongodb");
 
     app.patch("/allJobs/isApproved/:id", async (req, res) => {
       try {
