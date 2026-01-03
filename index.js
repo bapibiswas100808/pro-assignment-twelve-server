@@ -638,6 +638,11 @@ async function run() {
         const result = await applicationsCollection
           .aggregate([
             {
+              $match: {
+                $or: [{ isDeleted: false }, { isDeleted: { $exists: false } }],
+              },
+            },
+            {
               $lookup: {
                 from: "allJobs",
                 localField: "tuitionJobId",
@@ -646,7 +651,10 @@ async function run() {
               },
             },
             {
-              $unwind: "$job",
+              $unwind: {
+                path: "$job",
+                preserveNullAndEmptyArrays: true,
+              },
             },
             {
               $lookup: {
@@ -657,14 +665,17 @@ async function run() {
               },
             },
             {
-              $unwind: "$tutor",
+              $unwind: {
+                path: "$tutor",
+                preserveNullAndEmptyArrays: true,
+              },
             },
           ])
           .toArray();
         res.send(result);
       } catch (error) {
         console.error("Application fetch error:", error);
-        res.status(500).json({ message: "Server error" });
+        res.status(500).json({ message: "Server error", error: error.message });
       }
     });
 
@@ -680,14 +691,17 @@ async function run() {
           });
         }
 
-        // Use correct collections
-        // tutorCollections, jobCollections are already defined
         const applicationsCollection = client
           .db("tutorHub")
           .collection("applications");
 
-        // Validate tutor & job
-        const tutor = await tutorCollections.findOne({ id: tutorId });
+        // Validate tutor & job - tutorId can be numeric id or ObjectId string
+        const tutor = await tutorCollections.findOne(
+          ObjectId.isValid(tutorId)
+            ? { _id: new ObjectId(tutorId) }
+            : { id: Number(tutorId) }
+        );
+
         const job = await jobCollections.findOne({
           _id: new ObjectId(tuitionJobId),
         });
@@ -698,12 +712,12 @@ async function run() {
           });
         }
 
-        // Create application
+        // Create application - store the tutor's actual _id
         const application = {
           rate,
           schedule,
           proposal,
-          tutorId: new ObjectId(tutorId),
+          tutorId: tutor._id, // Store the tutor's _id directly
           tuitionJobId: new ObjectId(tuitionJobId),
           createdAt: new Date(),
         };
@@ -725,6 +739,25 @@ async function run() {
         });
       } catch (error) {
         console.error("Application create error:", error);
+        res.status(500).json({ message: "Server error" });
+      }
+    });
+
+    app.patch("/applications/:id", async (req, res) => {
+      try {
+        const { isDeleted } = req.body;
+        const result = await applicationsCollection.updateOne(
+          { _id: new ObjectId(req.params.id) },
+          { $set: { isDeleted } }
+        );
+
+        if (result.matchedCount === 0) {
+          return res.status(404).json({ message: "Application not found" });
+        }
+
+        res.json({ message: "Application updated successfully" });
+      } catch (error) {
+        console.error("Update error:", error);
         res.status(500).json({ message: "Server error" });
       }
     });
