@@ -1059,19 +1059,47 @@ async function run() {
     });
 
     // manual payment routes for bkash and other payment methods
+
+    // app.post("/manual-bkash-payment", verifyToken, async (req, res) => {
+    //   const paymentData = req.body;
+    //   const payment = {
+    //     ...paymentData,
+    //     number: paymentData.sender,
+    //     transactionId: paymentData.trxId,
+    //     createdAt: new Date(),
+    //     status: "pending",
+    //     userEmail: req.decoded.email,
+    //   };
+    //   const result = await paymentCollections.insertOne(payment);
+    //   res.send(result);
+    // });
+
     // post manual payment
     app.post("/manual-bkash-payment", verifyToken, async (req, res) => {
-      const paymentData = req.body;
-      const payment = {
-        ...paymentData,
-        number: paymentData.sender,
-        transactionId: paymentData.trxId,
-        createdAt: new Date(),
-        status: "pending",
-        userEmail: req.decoded.email,
-      };
-      const result = await paymentCollections.insertOne(payment);
-      res.send(result);
+      try {
+        // Duplicate check
+        const exists = await paymentCollections.findOne({ trxId });
+        if (exists) {
+          return res.status(409).send({
+            message: "This transaction ID has already been used",
+          });
+        }
+
+        const payment = {
+          ...req.body,
+          number: req.body.sender,
+          transactionId: trxId,
+          createdAt: new Date(),
+          status: "pending",
+          userEmail: req.decoded.email,
+        };
+
+        const result = await paymentCollections.insertOne(payment);
+        res.status(201).send(result);
+      } catch (error) {
+        console.error("bKash payment error:", error);
+        res.status(500).send({ message: "Internal server error" });
+      }
     });
 
     // get user's payments
