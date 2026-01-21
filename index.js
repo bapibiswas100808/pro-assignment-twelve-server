@@ -1057,40 +1057,6 @@ async function run() {
         clientSecret: paymentIntent.client_secret,
       });
     });
-<<<<<<< Updated upstream
-=======
-
-    // manual payment routes for bkash and other payment methods
-    // post manual payment
-    app.post("/manual-bkash-payment", verifyToken, async (req, res) => {
-      const paymentData = req.body;
-      const payment = {
-        ...paymentData,
-        number: paymentData.sender,
-        transactionId: paymentData.trxId,
-        createdAt: new Date(),
-        status: "pending",
-        userEmail: req.decoded.email,
-      };
-      const result = await paymentCollections.insertOne(payment);
-      res.send(result);
-    });
-
-    // get all payments
-    app.get("/all-payments", async (req, res) => {
-      const result = await paymentCollections.find().toArray();
-      res.send(result);
-    });
-
-    // get payments by email (user's own payments)
-    app.get("/my-payments", verifyToken, async (req, res) => {
-      const email = req.decoded.email;
-      const query = { userEmail: email };
-      const result = await paymentCollections.find(query).toArray();
-      res.send(result);
-    });
-
->>>>>>> Stashed changes
 
     // manual payment routes for bkash and other payment methods
     // post manual payment
