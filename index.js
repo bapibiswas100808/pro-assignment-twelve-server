@@ -12,7 +12,7 @@ app.use(express.json());
 app.use(
   cors({
     origin: ["http://localhost:3000", "https://www.tutormediabd.com"],
-  })
+  }),
 );
 
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
@@ -40,6 +40,7 @@ async function run() {
       .db("tutorHub")
       .collection("applications");
     const userCollections = client.db("tutorHub").collection("users");
+    const paymentCollections = client.db("tutorHub").collection("payments");
 
     // jwt related api
     app.post("/jwt", async (req, res) => {
@@ -107,7 +108,7 @@ async function run() {
       const token = jwt.sign(
         { email: tutor.email, role: "tutor" },
         process.env.ACCESS_TOKEN_SECRET,
-        { expiresIn: "1h" }
+        { expiresIn: "1h" },
       );
       const { password: pwd, ...safeTutor } = tutor;
 
@@ -157,7 +158,7 @@ async function run() {
         const counterResult = await countersCollection.findOneAndUpdate(
           { _id: "jobId" },
           { $inc: { seq: 1 } },
-          { upsert: true, returnDocument: "after" }
+          { upsert: true, returnDocument: "after" },
         );
 
         // Fallback if findOneAndUpdate returns null
@@ -251,7 +252,7 @@ async function run() {
         const counterResult = await countersCollection.findOneAndUpdate(
           { _id: "tutorId" },
           { $inc: { seq: 1 } },
-          { upsert: true, returnDocument: "after" } // correct for MongoDB driver v4+
+          { upsert: true, returnDocument: "after" }, // correct for MongoDB driver v4+
         );
 
         // Fallback if findOneAndUpdate returns null
@@ -638,6 +639,11 @@ async function run() {
         const result = await applicationsCollection
           .aggregate([
             {
+              $match: {
+                $or: [{ isDeleted: false }, { isDeleted: { $exists: false } }],
+              },
+            },
+            {
               $lookup: {
                 from: "allJobs",
                 localField: "tuitionJobId",
@@ -646,7 +652,10 @@ async function run() {
               },
             },
             {
-              $unwind: "$job",
+              $unwind: {
+                path: "$job",
+                preserveNullAndEmptyArrays: true,
+              },
             },
             {
               $lookup: {
@@ -657,14 +666,17 @@ async function run() {
               },
             },
             {
-              $unwind: "$tutor",
+              $unwind: {
+                path: "$tutor",
+                preserveNullAndEmptyArrays: true,
+              },
             },
           ])
           .toArray();
         res.send(result);
       } catch (error) {
         console.error("Application fetch error:", error);
-        res.status(500).json({ message: "Server error" });
+        res.status(500).json({ message: "Server error", error: error.message });
       }
     });
 
@@ -680,14 +692,17 @@ async function run() {
           });
         }
 
-        // Use correct collections
-        // tutorCollections, jobCollections are already defined
         const applicationsCollection = client
           .db("tutorHub")
           .collection("applications");
 
-        // Validate tutor & job
-        const tutor = await tutorCollections.findOne({ id: tutorId });
+        // Validate tutor & job - tutorId can be numeric id or ObjectId string
+        const tutor = await tutorCollections.findOne(
+          ObjectId.isValid(tutorId)
+            ? { _id: new ObjectId(tutorId) }
+            : { id: Number(tutorId) },
+        );
+
         const job = await jobCollections.findOne({
           _id: new ObjectId(tuitionJobId),
         });
@@ -698,12 +713,12 @@ async function run() {
           });
         }
 
-        // Create application
+        // Create application - store the tutor's actual _id
         const application = {
           rate,
           schedule,
           proposal,
-          tutorId: new ObjectId(tutorId),
+          tutorId: tutor._id, // Store the tutor's _id directly
           tuitionJobId: new ObjectId(tuitionJobId),
           createdAt: new Date(),
         };
@@ -713,7 +728,7 @@ async function run() {
         // Push application into job (one job → many applications)
         await jobCollections.updateOne(
           { _id: new ObjectId(tuitionJobId) },
-          { $push: { applications: result.insertedId } }
+          { $push: { applications: result.insertedId } },
         );
 
         res.status(201).json({
@@ -725,6 +740,25 @@ async function run() {
         });
       } catch (error) {
         console.error("Application create error:", error);
+        res.status(500).json({ message: "Server error" });
+      }
+    });
+
+    app.patch("/applications/:id", async (req, res) => {
+      try {
+        const { isDeleted } = req.body;
+        const result = await applicationsCollection.updateOne(
+          { _id: new ObjectId(req.params.id) },
+          { $set: { isDeleted } },
+        );
+
+        if (result.matchedCount === 0) {
+          return res.status(404).json({ message: "Application not found" });
+        }
+
+        res.json({ message: "Application updated successfully" });
+      } catch (error) {
+        console.error("Update error:", error);
         res.status(500).json({ message: "Server error" });
       }
     });
@@ -758,7 +792,7 @@ async function run() {
           admin = user?.role === "admin";
         }
         res.send({ admin });
-      }
+      },
     );
 
     // get all user
@@ -984,7 +1018,7 @@ async function run() {
       const result = await allBannerCollections.findOneAndUpdate(
         { _id: new ObjectId(id) },
         { $set: { isActive: "true" } },
-        { returnOriginal: "false" }
+        { returnOriginal: "false" },
       );
       res.send(result);
     });
@@ -1057,6 +1091,45 @@ async function run() {
     });
 
 >>>>>>> Stashed changes
+
+    // manual payment routes for bkash and other payment methods
+    // post manual payment
+    app.post("/manual-bkash-payment", verifyToken, async (req, res) => {
+      const paymentData = req.body;
+      const payment = {
+        ...paymentData,
+        number: paymentData.sender,
+        transactionId: paymentData.trxId,
+        createdAt: new Date(),
+        status: "pending",
+        userEmail: req.decoded.email,
+      };
+      const result = await paymentCollections.insertOne(payment);
+      res.send(result);
+    });
+
+    // get user's payments
+    app.get("/manual-bkash-payment", verifyToken, async (req, res) => {
+      const email = req.decoded.email;
+      const query = { userEmail: email };
+      const result = await paymentCollections.find(query).toArray();
+      res.send(result);
+    });
+
+    // get all payments
+    app.get("/all-payments", async (req, res) => {
+      const result = await paymentCollections.find().toArray();
+      res.send(result);
+    });
+
+    // get payments by email (user's own payments)
+    app.get("/my-payments", verifyToken, async (req, res) => {
+      const email = req.decoded.email;
+      const query = { userEmail: email };
+      const result = await paymentCollections.find(query).toArray();
+      res.send(result);
+    });
+
     // stats chart api
     app.get("/admin-stats", async (req, res) => {
       const users = await userCollections.estimatedDocumentCount();
@@ -1079,7 +1152,7 @@ async function run() {
     // Send a ping to confirm a successful connection
     // await client.db("admin").command({ ping: 1 });
     console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
+      "Pinged your deployment. You successfully connected to MongoDB!",
     );
   } finally {
     // Ensures that the client will close when you finish/error
