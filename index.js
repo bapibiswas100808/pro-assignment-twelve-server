@@ -6,6 +6,25 @@ require("dotenv").config();
 const bcrypt = require("bcryptjs");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const port = process.env.PORT || 5000;
+const multer = require("multer");
+const path = require("path");
+
+// -------------------------
+// Multer storage configuration
+// -------------------------
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, path.join(__dirname, "uploads")); // folder to save uploaded files
+  },
+  filename: function (req, file, cb) {
+    const ext = path.extname(file.originalname);
+    const name = file.fieldname + "-" + Date.now() + ext;
+    cb(null, name);
+  },
+});
+
+const upload = multer({ storage });
+
 
 // middleware
 app.use(express.json());
@@ -403,40 +422,6 @@ async function run() {
     });
 
     // Update tutor with partial data
-<<<<<<< Updated upstream
-    app.patch("/allTutors/update/:id", async (req, res) => {
-      try {
-        const { id } = req.params;
-        const updateData = req.body;
-
-        // Build possible search queries
-        const orClauses = [{ id }, { id: Number(id) }, { documentId: id }];
-        if (ObjectId.isValid(id)) orClauses.push({ _id: new ObjectId(id) });
-
-        const tutor = await tutorCollections.findOne({ $or: orClauses });
-        if (!tutor) return res.status(404).json({ message: "Tutor not found" });
-
-        const filter = tutor._id ? { _id: tutor._id } : { id: tutor.id };
-        const updatedDoc = {
-          $set: { ...updateData, updatedAt: new Date() },
-        };
-
-        const result = await tutorCollections.updateOne(filter, updatedDoc);
-
-        if (result.matchedCount === 0) {
-          return res.status(404).json({ message: "Tutor not found" });
-        }
-
-        res.json({
-          message: "Tutor updated successfully",
-          modifiedCount: result.modifiedCount,
-        });
-      } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: error.message });
-      }
-    });
-=======
  app.patch(
   "/allTutors/update/:id",
   upload.any(), // MUST for FormData
@@ -493,7 +478,6 @@ async function run() {
   }
 );
 
->>>>>>> Stashed changes
 
     // patch job approval (admin only)
 
