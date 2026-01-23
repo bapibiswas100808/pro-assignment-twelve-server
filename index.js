@@ -403,6 +403,7 @@ async function run() {
     });
 
     // Update tutor with partial data
+<<<<<<< Updated upstream
     app.patch("/allTutors/update/:id", async (req, res) => {
       try {
         const { id } = req.params;
@@ -435,6 +436,64 @@ async function run() {
         res.status(500).json({ message: error.message });
       }
     });
+=======
+ app.patch(
+  "/allTutors/update/:id",
+  upload.any(), // MUST for FormData
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const updateData = {};
+
+      // Parse normal fields from FormData
+      for (const key in req.body) {
+        try {
+          updateData[key] = JSON.parse(req.body[key]);
+        } catch {
+          updateData[key] = req.body[key];
+        }
+      }
+
+      // Handle uploaded files
+      if (req.files) {
+        req.files.forEach((file) => {
+          // Save the file path in documentsInfo
+          updateData.documentsInfo = updateData.documentsInfo || {};
+          updateData.documentsInfo[file.fieldname] = `/uploads/${file.filename}`;
+        });
+      }
+
+      // Ensure documentsInfo fields are preserved if no new file uploaded
+      const docFields = ["nidFront", "nidBack", "universityId", "sscCertificate", "hscCertificate"];
+      updateData.documentsInfo = updateData.documentsInfo || {};
+      docFields.forEach((key) => {
+        // If not in uploaded files, preserve string from FormData
+        if (!updateData.documentsInfo[key] && req.body[key]) {
+          updateData.documentsInfo[key] = req.body[key];
+        }
+      });
+
+      // Find tutor
+      const orClauses = [{ id }, { id: Number(id) }];
+      if (ObjectId.isValid(id)) orClauses.push({ _id: new ObjectId(id) });
+      const tutor = await tutorCollections.findOne({ $or: orClauses });
+      if (!tutor) return res.status(404).json({ message: "Tutor not found" });
+
+      // Update DB
+      await tutorCollections.updateOne(
+        { _id: tutor._id },
+        { $set: { ...updateData, updatedAt: new Date() } }
+      );
+
+      res.json({ message: "Tutor updated successfully" });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ message: error.message });
+    }
+  }
+);
+
+>>>>>>> Stashed changes
 
     // patch job approval (admin only)
 
