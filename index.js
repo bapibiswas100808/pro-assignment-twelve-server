@@ -6,6 +6,11 @@ require("dotenv").config();
 const bcrypt = require("bcryptjs");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const port = process.env.PORT || 5000;
+const multer = require("multer");
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+});
 
 // middleware
 app.use(express.json());
@@ -403,38 +408,49 @@ async function run() {
     });
 
     // Update tutor with partial data
-    app.patch("/allTutors/update/:id", async (req, res) => {
-      try {
-        const { id } = req.params;
-        const updateData = req.body;
+    app.patch(
+      "/allTutors/update/:id",
+      upload.any(), // ✅ MUST for FormData
+      async (req, res) => {
+        try {
+          const { id } = req.params;
 
-        // Build possible search queries
-        const orClauses = [{ id }, { id: Number(id) }, { documentId: id }];
-        if (ObjectId.isValid(id)) orClauses.push({ _id: new ObjectId(id) });
+          const updateData = {};
 
-        const tutor = await tutorCollections.findOne({ $or: orClauses });
-        if (!tutor) return res.status(404).json({ message: "Tutor not found" });
+          // Parse normal fields
+          for (const key in req.body) {
+            try {
+              updateData[key] = JSON.parse(req.body[key]);
+            } catch {
+              updateData[key] = req.body[key];
+            }
+          }
 
-        const filter = tutor._id ? { _id: tutor._id } : { id: tutor.id };
-        const updatedDoc = {
-          $set: { ...updateData, updatedAt: new Date() },
-        };
+          // Handle files if needed
+          if (req.files) {
+            req.files.forEach((file) => {
+              updateData[file.fieldname] = file.originalname; // or upload to cloud
+            });
+          }
 
-        const result = await tutorCollections.updateOne(filter, updatedDoc);
+          const orClauses = [{ id }, { id: Number(id) }];
+          if (ObjectId.isValid(id)) orClauses.push({ _id: new ObjectId(id) });
 
-        if (result.matchedCount === 0) {
-          return res.status(404).json({ message: "Tutor not found" });
+          const tutor = await tutorCollections.findOne({ $or: orClauses });
+          if (!tutor)
+            return res.status(404).json({ message: "Tutor not found" });
+
+          await tutorCollections.updateOne(
+            { _id: tutor._id },
+            { $set: { ...updateData, updatedAt: new Date() } },
+          );
+
+          res.json({ message: "Tutor updated successfully" });
+        } catch (error) {
+          res.status(500).json({ message: error.message });
         }
-
-        res.json({
-          message: "Tutor updated successfully",
-          modifiedCount: result.modifiedCount,
-        });
-      } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: error.message });
-      }
-    });
+      },
+    );
 
     // patch job approval (admin only)
 
