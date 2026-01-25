@@ -634,33 +634,65 @@ async function run() {
     });
 
     // update tuition job
+    // app.patch("/allJobs/update/:id", async (req, res) => {
+    //   try {
+    //     const { id } = req.params;
+    //     const { title } = req.body; // fields you want to update
+
+    //     if (!title) {
+    //       return res.status(400).json({ message: "Title is required" });
+    //     }
+
+    //     const orClauses = [{ id }, { id: Number(id) }, { documentId: id }];
+    //     if (ObjectId.isValid(id)) orClauses.push({ _id: new ObjectId(id) });
+
+    //     const job = await jobCollections.findOne({ $or: orClauses });
+    //     if (!job) return res.status(404).json({ message: "Job not found" });
+
+    //     const filter = job._id ? { _id: job._id } : { id: job.id };
+
+    //     const result = await jobCollections.updateOne(filter, {
+    //       $set: { title },
+    //     });
+
+    //     res.json({ success: true, modifiedCount: result.modifiedCount, title });
+    //   } catch (error) {
+    //     console.error(error);
+    //     res.status(500).json({ message: error.message });
+    //   }
+    // });
     app.patch("/allJobs/update/:id", async (req, res) => {
-      try {
-        const { id } = req.params;
-        const { title } = req.body; // fields you want to update
+  try {
+    const { id } = req.params;
+    const updateData = req.body; // 👈 take everything
 
-        if (!title) {
-          return res.status(400).json({ message: "Title is required" });
-        }
+    if (!updateData || Object.keys(updateData).length === 0) {
+      return res.status(400).json({ message: "No fields provided to update" });
+    }
 
-        const orClauses = [{ id }, { id: Number(id) }, { documentId: id }];
-        if (ObjectId.isValid(id)) orClauses.push({ _id: new ObjectId(id) });
+    const orClauses = [{ id }, { id: Number(id) }, { documentId: id }];
+    if (ObjectId.isValid(id)) orClauses.push({ _id: new ObjectId(id) });
 
-        const job = await jobCollections.findOne({ $or: orClauses });
-        if (!job) return res.status(404).json({ message: "Job not found" });
+    const job = await jobCollections.findOne({ $or: orClauses });
+    if (!job) return res.status(404).json({ message: "Job not found" });
 
-        const filter = job._id ? { _id: job._id } : { id: job.id };
+    const filter = job._id ? { _id: job._id } : { id: job.id };
 
-        const result = await jobCollections.updateOne(filter, {
-          $set: { title },
-        });
-
-        res.json({ success: true, modifiedCount: result.modifiedCount, title });
-      } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: error.message });
-      }
+    const result = await jobCollections.updateOne(filter, {
+      $set: updateData, // 🔥 update all sent fields
     });
+
+    res.json({
+      success: true,
+      modifiedCount: result.modifiedCount,
+      updatedFields: updateData,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 
     // blog related api
     // get all blogs
