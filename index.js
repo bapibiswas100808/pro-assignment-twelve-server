@@ -7,10 +7,24 @@ const bcrypt = require("bcryptjs");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const port = process.env.PORT || 5000;
 const multer = require("multer");
+const path = require("path");
 
-const upload = multer({
-  storage: multer.memoryStorage(),
+// -------------------------
+// Multer storage configuration
+// -------------------------
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, path.join(__dirname, "uploads")); // folder to save uploaded files
+  },
+  filename: function (req, file, cb) {
+    const ext = path.extname(file.originalname);
+    const name = file.fieldname + "-" + Date.now() + ext;
+    cb(null, name);
+  },
 });
+
+const upload = multer({ storage });
+
 
 // middleware
 app.use(express.json());
@@ -408,49 +422,62 @@ async function run() {
     });
 
     // Update tutor with partial data
-    app.patch(
-      "/allTutors/update/:id",
-      upload.any(), // ✅ MUST for FormData
-      async (req, res) => {
+ app.patch(
+  "/allTutors/update/:id",
+  upload.any(), // MUST for FormData
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const updateData = {};
+
+      // Parse normal fields from FormData
+      for (const key in req.body) {
         try {
-          const { id } = req.params;
-
-          const updateData = {};
-
-          // Parse normal fields
-          for (const key in req.body) {
-            try {
-              updateData[key] = JSON.parse(req.body[key]);
-            } catch {
-              updateData[key] = req.body[key];
-            }
-          }
-
-          // Handle files if needed
-          if (req.files) {
-            req.files.forEach((file) => {
-              updateData[file.fieldname] = file.originalname; // or upload to cloud
-            });
-          }
-
-          const orClauses = [{ id }, { id: Number(id) }];
-          if (ObjectId.isValid(id)) orClauses.push({ _id: new ObjectId(id) });
-
-          const tutor = await tutorCollections.findOne({ $or: orClauses });
-          if (!tutor)
-            return res.status(404).json({ message: "Tutor not found" });
-
-          await tutorCollections.updateOne(
-            { _id: tutor._id },
-            { $set: { ...updateData, updatedAt: new Date() } },
-          );
-
-          res.json({ message: "Tutor updated successfully" });
-        } catch (error) {
-          res.status(500).json({ message: error.message });
+          updateData[key] = JSON.parse(req.body[key]);
+        } catch {
+          updateData[key] = req.body[key];
         }
-      },
-    );
+      }
+
+      // Handle uploaded files
+      if (req.files) {
+        req.files.forEach((file) => {
+          // Save the file path in documentsInfo
+          updateData.documentsInfo = updateData.documentsInfo || {};
+          updateData.documentsInfo[file.fieldname] = `/uploads/${file.filename}`;
+        });
+      }
+
+      // Ensure documentsInfo fields are preserved if no new file uploaded
+      const docFields = ["nidFront", "nidBack", "universityId", "sscCertificate", "hscCertificate"];
+      updateData.documentsInfo = updateData.documentsInfo || {};
+      docFields.forEach((key) => {
+        // If not in uploaded files, preserve string from FormData
+        if (!updateData.documentsInfo[key] && req.body[key]) {
+          updateData.documentsInfo[key] = req.body[key];
+        }
+      });
+
+      // Find tutor
+      const orClauses = [{ id }, { id: Number(id) }];
+      if (ObjectId.isValid(id)) orClauses.push({ _id: new ObjectId(id) });
+      const tutor = await tutorCollections.findOne({ $or: orClauses });
+      if (!tutor) return res.status(404).json({ message: "Tutor not found" });
+
+      // Update DB
+      await tutorCollections.updateOne(
+        { _id: tutor._id },
+        { $set: { ...updateData, updatedAt: new Date() } }
+      );
+
+      res.json({ message: "Tutor updated successfully" });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ message: error.message });
+    }
+  }
+);
+
 
     // patch job approval (admin only)
 
@@ -607,33 +634,65 @@ async function run() {
     });
 
     // update tuition job
+    // app.patch("/allJobs/update/:id", async (req, res) => {
+    //   try {
+    //     const { id } = req.params;
+    //     const { title } = req.body; // fields you want to update
+
+    //     if (!title) {
+    //       return res.status(400).json({ message: "Title is required" });
+    //     }
+
+    //     const orClauses = [{ id }, { id: Number(id) }, { documentId: id }];
+    //     if (ObjectId.isValid(id)) orClauses.push({ _id: new ObjectId(id) });
+
+    //     const job = await jobCollections.findOne({ $or: orClauses });
+    //     if (!job) return res.status(404).json({ message: "Job not found" });
+
+    //     const filter = job._id ? { _id: job._id } : { id: job.id };
+
+    //     const result = await jobCollections.updateOne(filter, {
+    //       $set: { title },
+    //     });
+
+    //     res.json({ success: true, modifiedCount: result.modifiedCount, title });
+    //   } catch (error) {
+    //     console.error(error);
+    //     res.status(500).json({ message: error.message });
+    //   }
+    // });
     app.patch("/allJobs/update/:id", async (req, res) => {
-      try {
-        const { id } = req.params;
-        const { title } = req.body; // fields you want to update
+  try {
+    const { id } = req.params;
+    const updateData = req.body; // 👈 take everything
 
-        if (!title) {
-          return res.status(400).json({ message: "Title is required" });
-        }
+    if (!updateData || Object.keys(updateData).length === 0) {
+      return res.status(400).json({ message: "No fields provided to update" });
+    }
 
-        const orClauses = [{ id }, { id: Number(id) }, { documentId: id }];
-        if (ObjectId.isValid(id)) orClauses.push({ _id: new ObjectId(id) });
+    const orClauses = [{ id }, { id: Number(id) }, { documentId: id }];
+    if (ObjectId.isValid(id)) orClauses.push({ _id: new ObjectId(id) });
 
-        const job = await jobCollections.findOne({ $or: orClauses });
-        if (!job) return res.status(404).json({ message: "Job not found" });
+    const job = await jobCollections.findOne({ $or: orClauses });
+    if (!job) return res.status(404).json({ message: "Job not found" });
 
-        const filter = job._id ? { _id: job._id } : { id: job.id };
+    const filter = job._id ? { _id: job._id } : { id: job.id };
 
-        const result = await jobCollections.updateOne(filter, {
-          $set: { title },
-        });
-
-        res.json({ success: true, modifiedCount: result.modifiedCount, title });
-      } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: error.message });
-      }
+    const result = await jobCollections.updateOne(filter, {
+      $set: updateData, // 🔥 update all sent fields
     });
+
+    res.json({
+      success: true,
+      modifiedCount: result.modifiedCount,
+      updatedFields: updateData,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 
     // blog related api
     // get all blogs
