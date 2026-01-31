@@ -25,7 +25,6 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
-
 // middleware
 app.use(express.json());
 app.use(
@@ -422,62 +421,69 @@ async function run() {
     });
 
     // Update tutor with partial data
- app.patch(
-  "/allTutors/update/:id",
-  upload.any(), // MUST for FormData
-  async (req, res) => {
-    try {
-      const { id } = req.params;
-      const updateData = {};
-
-      // Parse normal fields from FormData
-      for (const key in req.body) {
+    app.patch(
+      "/allTutors/update/:id",
+      upload.any(), // MUST for FormData
+      async (req, res) => {
         try {
-          updateData[key] = JSON.parse(req.body[key]);
-        } catch {
-          updateData[key] = req.body[key];
-        }
-      }
+          const { id } = req.params;
+          const updateData = {};
 
-      // Handle uploaded files
-      if (req.files) {
-        req.files.forEach((file) => {
-          // Save the file path in documentsInfo
+          // Parse normal fields from FormData
+          for (const key in req.body) {
+            try {
+              updateData[key] = JSON.parse(req.body[key]);
+            } catch {
+              updateData[key] = req.body[key];
+            }
+          }
+
+          // Handle uploaded files
+          if (req.files) {
+            req.files.forEach((file) => {
+              // Save the file path in documentsInfo
+              updateData.documentsInfo = updateData.documentsInfo || {};
+              updateData.documentsInfo[file.fieldname] =
+                `/uploads/${file.filename}`;
+            });
+          }
+
+          // Ensure documentsInfo fields are preserved if no new file uploaded
+          const docFields = [
+            "nidFront",
+            "nidBack",
+            "universityId",
+            "sscCertificate",
+            "hscCertificate",
+          ];
           updateData.documentsInfo = updateData.documentsInfo || {};
-          updateData.documentsInfo[file.fieldname] = `/uploads/${file.filename}`;
-        });
-      }
+          docFields.forEach((key) => {
+            // If not in uploaded files, preserve string from FormData
+            if (!updateData.documentsInfo[key] && req.body[key]) {
+              updateData.documentsInfo[key] = req.body[key];
+            }
+          });
 
-      // Ensure documentsInfo fields are preserved if no new file uploaded
-      const docFields = ["nidFront", "nidBack", "universityId", "sscCertificate", "hscCertificate"];
-      updateData.documentsInfo = updateData.documentsInfo || {};
-      docFields.forEach((key) => {
-        // If not in uploaded files, preserve string from FormData
-        if (!updateData.documentsInfo[key] && req.body[key]) {
-          updateData.documentsInfo[key] = req.body[key];
+          // Find tutor
+          const orClauses = [{ id }, { id: Number(id) }];
+          if (ObjectId.isValid(id)) orClauses.push({ _id: new ObjectId(id) });
+          const tutor = await tutorCollections.findOne({ $or: orClauses });
+          if (!tutor)
+            return res.status(404).json({ message: "Tutor not found" });
+
+          // Update DB
+          await tutorCollections.updateOne(
+            { _id: tutor._id },
+            { $set: { ...updateData, updatedAt: new Date() } },
+          );
+
+          res.json({ message: "Tutor updated successfully" });
+        } catch (error) {
+          console.error(error);
+          res.status(500).json({ message: error.message });
         }
-      });
-
-      // Find tutor
-      const orClauses = [{ id }, { id: Number(id) }];
-      if (ObjectId.isValid(id)) orClauses.push({ _id: new ObjectId(id) });
-      const tutor = await tutorCollections.findOne({ $or: orClauses });
-      if (!tutor) return res.status(404).json({ message: "Tutor not found" });
-
-      // Update DB
-      await tutorCollections.updateOne(
-        { _id: tutor._id },
-        { $set: { ...updateData, updatedAt: new Date() } }
-      );
-
-      res.json({ message: "Tutor updated successfully" });
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ message: error.message });
-    }
-  }
-);
-
+      },
+    );
 
     // patch job approval (admin only)
 
@@ -634,65 +640,39 @@ async function run() {
     });
 
     // update tuition job
-    // app.patch("/allJobs/update/:id", async (req, res) => {
-    //   try {
-    //     const { id } = req.params;
-    //     const { title } = req.body; // fields you want to update
-
-    //     if (!title) {
-    //       return res.status(400).json({ message: "Title is required" });
-    //     }
-
-    //     const orClauses = [{ id }, { id: Number(id) }, { documentId: id }];
-    //     if (ObjectId.isValid(id)) orClauses.push({ _id: new ObjectId(id) });
-
-    //     const job = await jobCollections.findOne({ $or: orClauses });
-    //     if (!job) return res.status(404).json({ message: "Job not found" });
-
-    //     const filter = job._id ? { _id: job._id } : { id: job.id };
-
-    //     const result = await jobCollections.updateOne(filter, {
-    //       $set: { title },
-    //     });
-
-    //     res.json({ success: true, modifiedCount: result.modifiedCount, title });
-    //   } catch (error) {
-    //     console.error(error);
-    //     res.status(500).json({ message: error.message });
-    //   }
-    // });
     app.patch("/allJobs/update/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const updateData = req.body; // 👈 take everything
+      try {
+        const { id } = req.params;
+        const updateData = req.body; // 👈 take everything
 
-    if (!updateData || Object.keys(updateData).length === 0) {
-      return res.status(400).json({ message: "No fields provided to update" });
-    }
+        if (!updateData || Object.keys(updateData).length === 0) {
+          return res
+            .status(400)
+            .json({ message: "No fields provided to update" });
+        }
 
-    const orClauses = [{ id }, { id: Number(id) }, { documentId: id }];
-    if (ObjectId.isValid(id)) orClauses.push({ _id: new ObjectId(id) });
+        const orClauses = [{ id }, { id: Number(id) }, { documentId: id }];
+        if (ObjectId.isValid(id)) orClauses.push({ _id: new ObjectId(id) });
 
-    const job = await jobCollections.findOne({ $or: orClauses });
-    if (!job) return res.status(404).json({ message: "Job not found" });
+        const job = await jobCollections.findOne({ $or: orClauses });
+        if (!job) return res.status(404).json({ message: "Job not found" });
 
-    const filter = job._id ? { _id: job._id } : { id: job.id };
+        const filter = job._id ? { _id: job._id } : { id: job.id };
 
-    const result = await jobCollections.updateOne(filter, {
-      $set: updateData, // 🔥 update all sent fields
+        const result = await jobCollections.updateOne(filter, {
+          $set: updateData, // 🔥 update all sent fields
+        });
+
+        res.json({
+          success: true,
+          modifiedCount: result.modifiedCount,
+          updatedFields: updateData,
+        });
+      } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: error.message });
+      }
     });
-
-    res.json({
-      success: true,
-      modifiedCount: result.modifiedCount,
-      updatedFields: updateData,
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: error.message });
-  }
-});
-
 
     // blog related api
     // get all blogs
@@ -1152,7 +1132,15 @@ async function run() {
     // post manual payment
     app.post("/manual-bkash-payment", verifyToken, async (req, res) => {
       try {
-        // Duplicate check
+        const { sender, trxId, plan, amount, tutorId, method } = req.body;
+
+        if (!sender || !trxId || !tutorId) {
+          return res.status(400).send({
+            message: "Sender, Transaction ID and Tutor ID are required",
+          });
+        }
+
+        // Duplicate trx check
         const exists = await paymentCollections.findOne({ trxId });
         if (exists) {
           return res.status(409).send({
@@ -1161,8 +1149,13 @@ async function run() {
         }
 
         const payment = {
-          ...req.body,
-          number: req.body.sender,
+          tutorId: Number(tutorId), // ✅ force number
+          plan,
+          amount,
+          sender,
+          trxId,
+          method: method || "bkash",
+          number: sender,
           transactionId: trxId,
           createdAt: new Date(),
           status: "pending",
