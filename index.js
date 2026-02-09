@@ -8,6 +8,8 @@ const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const port = process.env.PORT || 5000;
 const multer = require("multer");
 const path = require("path");
+const crypto = require("crypto");
+const nodemailer = require("nodemailer");
 
 // -------------------------
 // Multer storage configuration
@@ -34,7 +36,11 @@ app.use(
 );
 
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
-const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.5e8b5ac.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
+
+// console.log("DB_USER:", process.env.DB_USER);
+// console.log("DB_PASS:", process.env.DB_PASS);
+
+const uri = `mongodb+srv://${encodeURIComponent(process.env.DB_USER)}:${encodeURIComponent(process.env.DB_PASS)}@cluster0.5e8b5ac.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
@@ -48,7 +54,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    // await client.connect();
+    await client.connect();
 
     const jobCollections = client.db("tutorHub").collection("allJobs");
     const tutorCollections = client.db("tutorHub").collection("allTutors");
@@ -93,6 +99,79 @@ async function run() {
       }
       next();
     };
+
+    // forgot password
+    app.post("/forgot-password", async (req, res) => {
+      const { email } = req.body;
+
+      const tutor = await tutorCollections.findOne({ email });
+      if (!tutor) {
+        return res.status(404).send({ message: "Tutor not found" });
+      }
+
+      const token = crypto.randomBytes(32).toString("hex");
+      const expires = Date.now() + 1000 * 60 * 15; // 15 minutes
+
+      await tutorCollections.updateOne(
+        { email },
+        {
+          $set: {
+            resetToken: token,
+            resetTokenExpires: expires,
+          },
+        },
+      );
+
+      const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
+
+      const transporter = nodemailer.createTransport({
+        service: "gmail",
+        auth: {
+          user: process.env.EMAIL_USER,
+          pass: process.env.EMAIL_PASSWORD,
+        },
+      });
+
+      await transporter.sendMail({
+        from: `"Tutor Media" <${process.env.EMAIL_USER}>`,
+        to: email,
+        subject: "Password Reset",
+        html: `
+      <p>You requested a password reset.</p>
+      <p>Click below to reset your password:</p>
+      <a href="${resetLink}">${resetLink}</a>
+      <p>This link expires in 15 minutes.</p>
+    `,
+      });
+
+      res.send({ success: true, message: "Reset link sent" });
+    });
+
+    // reset password
+    app.post("/reset-password", async (req, res) => {
+      const { token, password } = req.body;
+
+      const tutor = await tutorCollections.findOne({
+        resetToken: token,
+        resetTokenExpires: { $gt: Date.now() },
+      });
+
+      if (!tutor) {
+        return res.status(400).send({ message: "Invalid or expired token" });
+      }
+
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      await tutorCollections.updateOne(
+        { _id: tutor._id },
+        {
+          $set: { password: hashedPassword },
+          $unset: { resetToken: "", resetTokenExpires: "" },
+        },
+      );
+
+      res.send({ success: true, message: "Password updated successfully" });
+    });
 
     // login (supports both normal users and tutors)
     app.post("/login", async (req, res) => {
@@ -1227,6 +1306,6 @@ app.get("/", (req, res) => {
   res.send("project is running");
 });
 
-app.listen(port, () => {
+app.listen(port, "0.0.0.0", () => {
   console.log(`project is running at ${port}`);
 });
