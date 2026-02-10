@@ -31,7 +31,11 @@ const upload = multer({ storage });
 app.use(express.json());
 app.use(
   cors({
-    origin: ["http://localhost:3000", "https://www.tutormediabd.com"],
+    origin: [
+      "http://localhost:3000",
+      "https://tutor-media-ehpl.vercel.app",
+      "https://www.tutormediabd.com",
+    ],
   }),
 );
 
@@ -1306,6 +1310,12 @@ app.get("/", (req, res) => {
   res.send("project is running");
 });
 
-app.listen(port, "0.0.0.0", () => {
-  console.log(`project is running at ${port}`);
-});
+// Export for Vercel serverless
+module.exports = app;
+
+// Local development only
+if (process.env.NODE_ENV !== "production") {
+  app.listen(port, "0.0.0.0", () => {
+    console.log(`project is running at ${port}`);
+  });
+}
