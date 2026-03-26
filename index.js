@@ -58,7 +58,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+    // await client.connect();
 
     const jobCollections = client.db("tutorHub").collection("allJobs");
     const tutorCollections = client.db("tutorHub").collection("allTutors");
@@ -251,42 +251,98 @@ async function run() {
     });
 
     // post a job
-    app.post("/allJobs", async (req, res) => {
-      try {
-        const job = req.body;
+app.post("/allJobs", async (req, res) => {
+  try {
+    const job = { ...req.body }; // clone body
 
-        // Generate unique numeric ID for the job
-        const counterResult = await countersCollection.findOneAndUpdate(
-          { _id: "jobId" },
-          { $inc: { seq: 1 } },
-          { upsert: true, returnDocument: "after" },
-        );
+    // Remove numeric 'id' if sent from frontend
+    if ("id" in job) delete job.id;
 
-        // Fallback if findOneAndUpdate returns null
-        let newId;
-        if (counterResult && counterResult.value && counterResult.value.seq) {
-          newId = counterResult.value.seq;
-        } else {
-          const counterDoc = await countersCollection.findOne({ _id: "jobId" });
-          if (!counterDoc) {
-            return res
-              .status(500)
-              .send({ message: "Failed to generate unique ID" });
-          }
-          newId = counterDoc.seq;
-        }
+    // Generate numeric counter
+    const counterResult = await countersCollection.findOneAndUpdate(
+      { _id: "jobId" },
+      { $inc: { seq: 1 } },
+      { upsert: true, returnDocument: "after" }
+    );
 
-        job.id = newId;
-        job.createdAt = new Date();
-        // job.applications = job.applications || [];
+    const newSeq = counterResult?.value?.seq ?? 1;
 
-        const result = await jobCollections.insertOne(job);
-        res.status(201).send(result);
-      } catch (error) {
-        console.error(error);
-        res.status(500).send({ message: error.message });
-      }
+    // Division prefix
+    const divisionPrefix = {
+      dhaka: "D",
+      khulna: "K",
+      chattogram: "C",
+      rajshahi: "R",
+      barishal: "B",
+      sylhet: "S",
+      rangpur: "RG",
+      mymensingh: "M",
+    };
+
+    const prefix = divisionPrefix[job.division.toLowerCase()] || "X";
+
+    // Create jobId
+    const jobId = `${prefix}TM${String(newSeq).padStart(3, "0")}`;
+    job.jobId = jobId;
+
+    // Save createdAt
+    job.createdAt = new Date();
+
+    // Make sure no `id` property exists
+    if ("id" in job) delete job.id;
+    console.log("Inserting job with jobId:", job.jobId);
+
+    // Insert only job object with jobId
+    const result = await jobCollections.insertOne(job);
+
+
+    // Return response
+    res.status(201).send({
+      success: true,
+      jobId: jobId,
+      insertedId: result.insertedId,
     });
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({ message: error.message });
+  }
+});
+    // app.post("/allJobs", async (req, res) => {
+    //   try {
+    //     const job = req.body;
+
+    //     // Generate unique numeric ID for the job
+    //     const counterResult = await countersCollection.findOneAndUpdate(
+    //       { _id: "jobId" },
+    //       { $inc: { seq: 1 } },
+    //       { upsert: true, returnDocument: "after" },
+    //     );
+
+    //     // Fallback if findOneAndUpdate returns null
+    //     let newId;
+    //     if (counterResult && counterResult.value && counterResult.value.seq) {
+    //       newId = counterResult.value.seq;
+    //     } else {
+    //       const counterDoc = await countersCollection.findOne({ _id: "jobId" });
+    //       if (!counterDoc) {
+    //         return res
+    //           .status(500)
+    //           .send({ message: "Failed to generate unique ID" });
+    //       }
+    //       newId = counterDoc.seq;
+    //     }
+
+    //     job.id = newId;
+    //     job.createdAt = new Date();
+    //     // job.applications = job.applications || [];
+
+    //     const result = await jobCollections.insertOne(job);
+    //     res.status(201).send(result);
+    //   } catch (error) {
+    //     console.error(error);
+    //     res.status(500).send({ message: error.message });
+    //   }
+    // });
 
     // get all tutors
     app.get("/allTutors", async (req, res) => {
