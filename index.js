@@ -253,9 +253,12 @@ async function run() {
     // post a job
     app.post("/allJobs", async (req, res) => {
       try {
-        const job = req.body;
+        const job = { ...req.body }; // clone body
 
-        // Generate unique numeric ID for the job
+        // Remove numeric 'id' if sent from frontend
+        if ("id" in job) delete job.id;
+
+        // Generate unique numeric ID
         const counterResult = await countersCollection.findOneAndUpdate(
           { _id: "jobId" },
           { $inc: { seq: 1 } },
@@ -263,30 +266,96 @@ async function run() {
         );
 
         // Fallback if findOneAndUpdate returns null
-        let newId;
+        let newSeq;
         if (counterResult && counterResult.value && counterResult.value.seq) {
-          newId = counterResult.value.seq;
+          newSeq = counterResult.value.seq;
         } else {
-          const counterDoc = await countersCollection.findOne({ _id: "jobId" });
+          const counterDoc = await countersCollection.findOne({
+            _id: "jobId",
+          });
           if (!counterDoc) {
             return res
               .status(500)
               .send({ message: "Failed to generate unique ID" });
           }
-          newId = counterDoc.seq;
+          newSeq = counterDoc.seq;
         }
 
-        job.id = newId;
-        job.createdAt = new Date();
-        // job.applications = job.applications || [];
+        // Division prefix
+        const divisionPrefix = {
+          dhaka: "D",
+          khulna: "K",
+          chattogram: "C",
+          rajshahi: "R",
+          barishal: "B",
+          sylhet: "S",
+          rangpur: "RG",
+          mymensingh: "M",
+        };
 
+        const prefix = divisionPrefix[job.division.toLowerCase()] || "X";
+
+        // Create jobId
+        const jobId = `${prefix}TM${String(newSeq).padStart(3, "0")}`;
+        job.jobId = jobId;
+
+        // Save createdAt
+        job.createdAt = new Date();
+
+        // Make sure no `id` property exists
+        if ("id" in job) delete job.id;
+        console.log("Inserting job with jobId:", job.jobId);
+
+        // Insert only job object with jobId
         const result = await jobCollections.insertOne(job);
-        res.status(201).send(result);
+
+        // Return response
+        res.status(201).send({
+          success: true,
+          jobId: jobId,
+          insertedId: result.insertedId,
+        });
       } catch (error) {
         console.error(error);
         res.status(500).send({ message: error.message });
       }
     });
+    // app.post("/allJobs", async (req, res) => {
+    //   try {
+    //     const job = req.body;
+
+    //     // Generate unique numeric ID for the job
+    //     const counterResult = await countersCollection.findOneAndUpdate(
+    //       { _id: "jobId" },
+    //       { $inc: { seq: 1 } },
+    //       { upsert: true, returnDocument: "after" },
+    //     );
+
+    //     // Fallback if findOneAndUpdate returns null
+    //     let newId;
+    //     if (counterResult && counterResult.value && counterResult.value.seq) {
+    //       newId = counterResult.value.seq;
+    //     } else {
+    //       const counterDoc = await countersCollection.findOne({ _id: "jobId" });
+    //       if (!counterDoc) {
+    //         return res
+    //           .status(500)
+    //           .send({ message: "Failed to generate unique ID" });
+    //       }
+    //       newId = counterDoc.seq;
+    //     }
+
+    //     job.id = newId;
+    //     job.createdAt = new Date();
+    //     // job.applications = job.applications || [];
+
+    //     const result = await jobCollections.insertOne(job);
+    //     res.status(201).send(result);
+    //   } catch (error) {
+    //     console.error(error);
+    //     res.status(500).send({ message: error.message });
+    //   }
+    // });
 
     // get all tutors
     app.get("/allTutors", async (req, res) => {
@@ -661,7 +730,7 @@ async function run() {
       try {
         const { id } = req.params;
 
-        const orClauses = [{ id }, { id: Number(id) }, { documentId: id }];
+        const orClauses = [{ jobId: id }];
         if (ObjectId.isValid(id)) orClauses.push({ _id: new ObjectId(id) });
 
         const job = await jobCollections.findOne({ $or: orClauses });
@@ -669,7 +738,7 @@ async function run() {
           return res.status(404).json({ message: "Job not found" });
         }
 
-        const filter = job._id ? { _id: job._id } : { id: job.id };
+        const filter = job._id ? { _id: job._id } : { jobId: job.jobId };
 
         const updateDoc = {
           $set: {
@@ -695,7 +764,7 @@ async function run() {
       try {
         const { id } = req.params;
 
-        const orClauses = [{ id }, { id: Number(id) }, { documentId: id }];
+        const orClauses = [{ jobId: id }];
         if (ObjectId.isValid(id)) orClauses.push({ _id: new ObjectId(id) });
 
         const job = await jobCollections.findOne({ $or: orClauses });
@@ -703,7 +772,7 @@ async function run() {
           return res.status(404).json({ message: "Job not found" });
         }
 
-        const filter = job._id ? { _id: job._id } : { id: job.id };
+        const filter = job._id ? { _id: job._id } : { jobId: job.jobId };
 
         const result = await jobCollections.updateOne(filter, {
           $set: {
@@ -734,13 +803,13 @@ async function run() {
             .json({ message: "No fields provided to update" });
         }
 
-        const orClauses = [{ id }, { id: Number(id) }, { documentId: id }];
+        const orClauses = [{ jobId: id }];
         if (ObjectId.isValid(id)) orClauses.push({ _id: new ObjectId(id) });
 
         const job = await jobCollections.findOne({ $or: orClauses });
         if (!job) return res.status(404).json({ message: "Job not found" });
 
-        const filter = job._id ? { _id: job._id } : { id: job.id };
+        const filter = job._id ? { _id: job._id } : { jobId: job.jobId };
 
         const result = await jobCollections.updateOne(filter, {
           $set: updateData, // 🔥 update all sent fields
