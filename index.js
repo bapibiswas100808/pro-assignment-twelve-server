@@ -35,6 +35,7 @@ app.use(
       "http://localhost:3000",
       "https://tutor-media-ehpl.vercel.app",
       "https://www.tutormediabd.com",
+      "https://tutormediabd.com",
     ],
   }),
 );
@@ -1383,8 +1384,7 @@ app.get("/", (req, res) => {
 module.exports = app;
 
 // Local development only
-if (process.env.NODE_ENV !== "production") {
-  app.listen(port, "0.0.0.0", () => {
-    console.log(`project is running at ${port}`);
-  });
-}
+
+app.listen(port, "0.0.0.0", () => {
+  console.log(`project is running at ${port}`);
+});
