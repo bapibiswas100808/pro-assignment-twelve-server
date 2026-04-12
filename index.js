@@ -267,19 +267,21 @@ async function run() {
         );
 
         // Fallback if findOneAndUpdate returns null
+        // MongoDB driver v4+ returns the document directly; v3 wraps it in { value: ... }
         let newSeq;
-        if (counterResult && counterResult.value && counterResult.value.seq) {
-          newSeq = counterResult.value.seq;
+        const counterDoc = counterResult?.value ?? counterResult;
+        if (counterDoc && counterDoc.seq) {
+          newSeq = counterDoc.seq;
         } else {
-          const counterDoc = await countersCollection.findOne({
+          const fallbackDoc = await countersCollection.findOne({
             _id: "jobId",
           });
-          if (!counterDoc) {
+          if (!fallbackDoc) {
             return res
               .status(500)
               .send({ message: "Failed to generate unique ID" });
           }
-          newSeq = counterDoc.seq;
+          newSeq = fallbackDoc.seq;
         }
 
         // Division prefix
