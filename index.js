@@ -893,7 +893,8 @@ async function run() {
     // post a appliation
     app.post("/applications", async (req, res) => {
       try {
-        const { rate, schedule, proposal, tutorId, tuitionJobId } = req.body;
+        const { rate, schedule, proposal, tutorId, tuitionJobId, status } =
+          req.body;
         console.log(req.body);
 
         if (!tutorId || !tuitionJobId) {
@@ -930,6 +931,7 @@ async function run() {
           proposal,
           tutorId: tutor._id, // Store the tutor's _id directly
           tuitionJobId: new ObjectId(tuitionJobId),
+          status: status || "applied", // Default to "applied" if not provided
           createdAt: new Date(),
         };
 
@@ -956,10 +958,21 @@ async function run() {
 
     app.patch("/applications/:id", async (req, res) => {
       try {
-        const { isDeleted } = req.body;
+        const updateFields = {};
+        if (req.body.isDeleted !== undefined)
+          updateFields.isDeleted = req.body.isDeleted;
+        if (req.body.status !== undefined)
+          updateFields.status = req.body.status;
+
+        if (Object.keys(updateFields).length === 0) {
+          return res
+            .status(400)
+            .json({ message: "No fields provided to update" });
+        }
+
         const result = await applicationsCollection.updateOne(
           { _id: new ObjectId(req.params.id) },
-          { $set: { isDeleted } },
+          { $set: updateFields },
         );
 
         if (result.matchedCount === 0) {
@@ -969,6 +982,141 @@ async function run() {
         res.json({ message: "Application updated successfully" });
       } catch (error) {
         console.error("Update error:", error);
+        res.status(500).json({ message: "Server error" });
+      }
+    });
+
+    // admin: set application status to appointed
+    app.patch("/applications/:id/appointed", async (req, res) => {
+      try {
+        const result = await applicationsCollection.updateOne(
+          { _id: new ObjectId(req.params.id) },
+          { $set: { status: "appointed", appointedAt: new Date() } },
+        );
+
+        if (result.matchedCount === 0) {
+          return res.status(404).json({ message: "Application not found" });
+        }
+
+        res.json({ message: "Application appointed successfully" });
+      } catch (error) {
+        console.error("Appoint error:", error);
+        res.status(500).json({ message: "Server error" });
+      }
+    });
+
+    // admin: set application status to rejected
+    app.patch("/applications/:id/rejected", async (req, res) => {
+      try {
+        const result = await applicationsCollection.updateOne(
+          { _id: new ObjectId(req.params.id) },
+          { $set: { status: "rejected", rejectedAt: new Date() } },
+        );
+
+        if (result.matchedCount === 0) {
+          return res.status(404).json({ message: "Application not found" });
+        }
+
+        res.json({ message: "Application rejected successfully" });
+      } catch (error) {
+        console.error("Reject error:", error);
+        res.status(500).json({ message: "Server error" });
+      }
+    });
+
+    // get job stats (applied/shortlisted/appointed/confirmed/cancelled) for a tutor — single API call
+    app.get("/tutor-job-stats/:tutorId", async (req, res) => {
+      try {
+        const { tutorId } = req.params;
+
+        // Resolve tutor by numeric id, documentId, or ObjectId
+        const orClauses = [
+          { id: tutorId },
+          { id: Number(tutorId) },
+          { documentId: tutorId },
+        ];
+        if (ObjectId.isValid(tutorId))
+          orClauses.push({ _id: new ObjectId(tutorId) });
+
+        const tutor = await tutorCollections.findOne({ $or: orClauses });
+        if (!tutor) return res.status(404).json({ message: "Tutor not found" });
+
+        const [stats] = await applicationsCollection
+          .aggregate([
+            {
+              $match: {
+                tutorId: tutor._id,
+                $or: [{ isDeleted: false }, { isDeleted: { $exists: false } }],
+              },
+            },
+            {
+              $facet: {
+                applied: [
+                  {
+                    $match: {
+                      $or: [
+                        { status: "applied" },
+                        { status: { $exists: false } },
+                      ],
+                    },
+                  },
+                  { $count: "count" },
+                ],
+                shortlisted: [
+                  { $match: { status: "shortlisted" } },
+                  { $count: "count" },
+                ],
+                appointed: [
+                  { $match: { status: "appointed" } },
+                  { $count: "count" },
+                ],
+                confirmed: [
+                  { $match: { status: "confirmed" } },
+                  { $count: "count" },
+                ],
+                rejected: [
+                  {
+                    $match: {
+                      $or: [{ status: "rejected" }, { status: "cancelled" }],
+                    },
+                  },
+                  { $count: "count" },
+                ],
+              },
+            },
+            {
+              $project: {
+                applied: {
+                  $ifNull: [{ $arrayElemAt: ["$applied.count", 0] }, 0],
+                },
+                shortlisted: {
+                  $ifNull: [{ $arrayElemAt: ["$shortlisted.count", 0] }, 0],
+                },
+                appointed: {
+                  $ifNull: [{ $arrayElemAt: ["$appointed.count", 0] }, 0],
+                },
+                confirmed: {
+                  $ifNull: [{ $arrayElemAt: ["$confirmed.count", 0] }, 0],
+                },
+                rejected: {
+                  $ifNull: [{ $arrayElemAt: ["$rejected.count", 0] }, 0],
+                },
+              },
+            },
+          ])
+          .toArray();
+
+        res.json(
+          stats || {
+            applied: 0,
+            shortlisted: 0,
+            appointed: 0,
+            confirmed: 0,
+            rejected: 0,
+          },
+        );
+      } catch (error) {
+        console.error("Tutor stats error:", error);
         res.status(500).json({ message: "Server error" });
       }
     });
