@@ -1024,6 +1024,41 @@ async function run() {
       }
     });
 
+    // admin: shortlist a tutor application
+    app.patch("/applications/:id/shortlisted", async (req, res) => {
+      try {
+        const application = await applicationsCollection.findOne({
+          _id: new ObjectId(req.params.id),
+        });
+
+        if (!application) {
+          return res.status(404).json({ message: "Application not found" });
+        }
+
+        // Only one tutor can be appointed per job — block if already appointed
+        const alreadyAppointed = await applicationsCollection.findOne({
+          tuitionJobId: application.tuitionJobId,
+          status: "appointed",
+        });
+
+        if (alreadyAppointed) {
+          return res.status(409).json({
+            message: "A tutor has already been appointed for this job",
+          });
+        }
+
+        const result = await applicationsCollection.updateOne(
+          { _id: new ObjectId(req.params.id) },
+          { $set: { status: "shortlisted", shortlistedAt: new Date() } },
+        );
+
+        res.json({ message: "Application shortlisted successfully" });
+      } catch (error) {
+        console.error("Shortlist error:", error);
+        res.status(500).json({ message: "Server error" });
+      }
+    });
+
     // get job stats (applied/shortlisted/appointed/confirmed/cancelled) for a tutor — single API call
     app.get("/tutor-job-stats/:tutorId", async (req, res) => {
       try {
