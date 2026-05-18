@@ -846,12 +846,34 @@ async function run() {
     // get all applications with job and tutor details
     app.get("/applications", async (req, res) => {
       try {
+        const { tutorId } = req.query;
+        let matchStage = {
+          $or: [{ isDeleted: false }, { isDeleted: { $exists: false } }],
+        };
+
+        // If tutorId query parameter is provided, filter by that tutor
+        if (tutorId) {
+          const orClauses = [
+            { id: tutorId },
+            { id: Number(tutorId) },
+            { documentId: tutorId },
+          ];
+          if (ObjectId.isValid(tutorId))
+            orClauses.push({ _id: new ObjectId(tutorId) });
+
+          const tutor = await tutorCollections.findOne({ $or: orClauses });
+          if (!tutor) {
+            return res.status(404).json({ message: "Tutor not found" });
+          }
+
+          // Add tutorId filter to match stage
+          matchStage.tutorId = tutor._id;
+        }
+
         const result = await applicationsCollection
           .aggregate([
             {
-              $match: {
-                $or: [{ isDeleted: false }, { isDeleted: { $exists: false } }],
-              },
+              $match: matchStage,
             },
             {
               $lookup: {
